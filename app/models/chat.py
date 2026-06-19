@@ -1,0 +1,13 @@
+from pydantic import BaseModel, Field
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    session_id: str | None = None
+    use_tools: bool = True
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    steps: list[str]

@@ -1,6 +1,8 @@
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
 
+from app.core.config import settings
 from app.services.browser_tool import browser_tool
 from app.services.desktop_tool import desktop_tool
 from app.services.process_tool import process_tool
@@ -78,6 +80,12 @@ class AppWrapperService:
                 "risk": "medium",
                 "notes": "Open a specific file in VS Code and focus the editor.",
             },
+            "vscode.readme": {
+                "aliases": ["code.readme", "openreadme"],
+                "inputs": ["path?"],
+                "risk": "medium",
+                "notes": "Find and open a README-like file in VS Code.",
+            },
             "terminal.project": {
                 "aliases": ["project.shell", "shellhere"],
                 "inputs": ["path?"],
@@ -86,9 +94,9 @@ class AppWrapperService:
             },
             "terminal.command": {
                 "aliases": ["shell.command", "runcommand"],
-                "inputs": ["command"],
+                "inputs": ["command or path || command"],
                 "risk": "high",
-                "notes": "Ensure a terminal, then type a command and press Enter.",
+                "notes": "Ensure a terminal, optionally at a path, then type a command and press Enter.",
             },
             "browser.search": {
                 "aliases": ["search", "web.search"],
@@ -108,11 +116,23 @@ class AppWrapperService:
                 "risk": "medium",
                 "notes": "Open a URL in the managed browser and snapshot visible page text.",
             },
+            "project.inspect": {
+                "aliases": ["workspace.inspect", "project.scan"],
+                "inputs": ["path?"],
+                "risk": "low",
+                "notes": "Inspect a workspace path, detect common project files, and remember it for wrappers.",
+            },
             "project.starter": {
                 "aliases": ["workspace.start", "project.start"],
                 "inputs": ["path?"],
                 "risk": "high",
                 "notes": "Ensure Explorer, VS Code, and a project terminal for one workspace path.",
+            },
+            "project.resume": {
+                "aliases": ["workspace.resume", "resumeproject"],
+                "inputs": ["path?"],
+                "risk": "high",
+                "notes": "Resume a remembered project path across Explorer, VS Code, and terminal wrappers.",
             },
         }
 
@@ -178,6 +198,104 @@ class AppWrapperService:
 
     def _remember_wrapper(self, wrapper: str, **fields: Any) -> dict[str, Any]:
         return wrapper_state_service.update_state(wrapper, **fields)
+
+    def _workspace_root(self) -> Path:
+        return Path(settings.workspace_root).resolve()
+
+    def _resolve_workspace_path(self, target: str | None = None) -> Path:
+        base = self._workspace_root()
+        raw = self._default_path(target)
+        candidate = (base / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
+        try:
+            candidate.relative_to(base)
+        except ValueError as e:
+            raise ValueError(f"Path escapes workspace root: {raw}") from e
+        return candidate
+
+    def _project_summary(self, target: str | None = None) -> dict[str, Any]:
+        try:
+            path = self._resolve_workspace_path(target)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+        if not path.exists():
+            return {"ok": False, "error": f"Path does not exist: {path}"}
+        if not path.is_dir():
+            return {"ok": False, "error": f"Not a directory: {path}"}
+
+        marker_names = [
+            "README.md",
+            "README.txt",
+            "readme.md",
+            "pyproject.toml",
+            "requirements.txt",
+            "package.json",
+            "Cargo.toml",
+            ".gitignore",
+            "app",
+            "src",
+            "tests",
+        ]
+        found = []
+        for name in marker_names:
+            item = path / name
+            if item.exists():
+                found.append({"name": name, "is_dir": item.is_dir()})
+
+        files = sorted([p.name for p in path.iterdir() if p.is_file()])[:25]
+        dirs = sorted([p.name for p in path.iterdir() if p.is_dir()])[:25]
+        readme = self._find_readme(path)
+
+        project_type = []
+        if (path / "pyproject.toml").exists() or (path / "requirements.txt").exists():
+            project_type.append("python")
+        if (path / "package.json").exists():
+            project_type.append("javascript")
+        if (path / "Cargo.toml").exists():
+            project_type.append("rust")
+        if not project_type:
+            project_type.append("generic")
+
+        return {
+            "ok": True,
+            "path": str(path),
+            "project_type": project_type,
+            "markers": found,
+            "top_files": files,
+            "top_dirs": dirs,
+            "readme": str(readme) if readme else None,
+        }
+
+    def _find_readme(self, path: Path) -> Path | None:
+        candidates = [
+            path / "README.md",
+            path / "readme.md",
+            path / "README.txt",
+            path / "Readme.md",
+        ]
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                return candidate
+        return None
+
+    def _parse_command_payload(self, payload: str) -> tuple[str | None, str | None]:
+        raw = payload.strip()
+        if not raw:
+            return None, None
+        if "||" in raw:
+            left, right = raw.split("||", 1)
+            path = left.strip() or None
+            command = right.strip() or None
+            return path, command
+        return None, raw
+
+    def reset_wrapper_state(self, name: str | None = None) -> dict[str, Any]:
+        if name is None or not name.strip() or name.strip().lower() == "all":
+            return wrapper_state_service.clear_all()
+        canonical = self._normalize_name(name)
+        if not canonical:
+            return {"ok": False, "error": f"Unknown app wrapper: {name}"}
+        return wrapper_state_service.clear_state(canonical)
 
     def wrapper_status(self, name: str | None = None) -> dict[str, Any]:
         if name:
@@ -437,6 +555,21 @@ class AppWrapperService:
             self._remember_wrapper("vscode", last_recipe=canonical, last_path=file_path, last_target=file_path, last_result_ok=result.get("ok"))
             return result
 
+        if canonical == "vscode.readme":
+            summary = self._project_summary(target)
+            if not summary.get("ok"):
+                return summary
+            readme = summary.get("readme")
+            if not readme:
+                return {"ok": False, "error": "No README-like file found in that workspace path.", "summary": summary}
+            open_result = self.open_app("vscode", target=readme)
+            steps.append({"step": "open_readme_in_vscode", "result": open_result})
+            focus_result = self.focus_app("vscode")
+            steps.append({"step": "focus_vscode", "result": focus_result})
+            result = {"ok": self._steps_ok(steps), "recipe": canonical, "readme": readme, "summary": summary, "steps": steps}
+            self._remember_wrapper("vscode", last_recipe=canonical, last_path=readme, last_target=readme, last_result_ok=result.get("ok"))
+            return result
+
         if canonical == "terminal.project":
             path = self._default_path(target)
             ensure_result = self.ensure_app("terminal", target=path)
@@ -446,17 +579,17 @@ class AppWrapperService:
             return result
 
         if canonical == "terminal.command":
-            command = payload
+            path_target, command = self._parse_command_payload(payload)
             if not command:
-                return {"ok": False, "error": "This recipe needs a command. Use app recipe: terminal.command ::: your command"}
-            ensure_result = self.ensure_app("terminal")
+                return {"ok": False, "error": "This recipe needs a command. Use app recipe: terminal.command ::: your command or path || your command"}
+            ensure_result = self.ensure_app("terminal", target=path_target)
             steps.append({"step": "ensure_terminal", "result": ensure_result})
             type_result = desktop_tool.type_text(command)
             steps.append({"step": "type_command", "result": type_result})
             enter_result = desktop_tool.press_key("enter")
             steps.append({"step": "submit_command", "result": enter_result})
-            result = {"ok": self._steps_ok(steps), "recipe": canonical, "command": command, "steps": steps}
-            self._remember_wrapper("terminal", last_recipe=canonical, last_command=command, last_result_ok=result.get("ok"))
+            result = {"ok": self._steps_ok(steps), "recipe": canonical, "command": command, "path": path_target, "steps": steps}
+            self._remember_wrapper("terminal", last_recipe=canonical, last_command=command, last_path=path_target, last_target=path_target, last_result_ok=result.get("ok"))
             return result
 
         if canonical == "browser.search":
@@ -479,8 +612,12 @@ class AppWrapperService:
             url = f"https://duckduckgo.com/?q={quote_plus(query)}"
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_search_results", "result": open_result})
+            title_result = browser_tool.title()
+            steps.append({"step": "read_browser_title", "result": title_result})
             text_result = browser_tool.text_snapshot(max_chars=3000)
             steps.append({"step": "snapshot_results_text", "result": text_result})
+            screenshot_result = browser_tool.screenshot(None)
+            steps.append({"step": "capture_results_screenshot", "result": screenshot_result})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "query": query, "url": url, "steps": steps}
             self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=result.get("ok"))
             return result
@@ -491,11 +628,25 @@ class AppWrapperService:
                 return {"ok": False, "error": "This recipe needs a URL. Use app recipe: browser.snapshot ::: https://example.com"}
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_url", "result": open_result})
+            title_result = browser_tool.title()
+            steps.append({"step": "read_browser_title", "result": title_result})
             text_result = browser_tool.text_snapshot(max_chars=2500)
             steps.append({"step": "snapshot_page_text", "result": text_result})
+            screenshot_result = browser_tool.screenshot(None)
+            steps.append({"step": "capture_page_screenshot", "result": screenshot_result})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "url": url, "steps": steps}
             self._remember_wrapper("browser", last_recipe=canonical, last_url=url, last_target=url, last_result_ok=result.get("ok"))
             return result
+
+        if canonical == "project.inspect":
+            summary = self._project_summary(target)
+            if not summary.get("ok"):
+                return summary
+            path = summary.get("path")
+            self._remember_wrapper("explorer", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=True)
+            self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=True)
+            self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=True)
+            return {"ok": True, "recipe": canonical, "summary": summary}
 
         if canonical == "project.starter":
             path = self._default_path(target)
@@ -508,6 +659,11 @@ class AppWrapperService:
             self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
             self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
             return result
+
+        if canonical == "project.resume":
+            remembered_path = target or wrapper_state_service.get_state("vscode").get("last_path") or wrapper_state_service.get_state("explorer").get("last_path") or wrapper_state_service.get_state("terminal").get("last_path") or "."
+            result = self.run_recipe("project.starter", target=remembered_path)
+            return {"ok": result.get("ok", False), "recipe": canonical, "target": remembered_path, "result": result}
 
         return {"ok": False, "error": f"Recipe not implemented yet: {canonical}"}
 

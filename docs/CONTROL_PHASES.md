@@ -79,10 +79,10 @@ API endpoints:
 ## Phase extension D — App wrappers
 Current additions:
 - higher-level wrappers for Notepad, Calculator, Explorer, VS Code, browser, and terminal
-- wrapper open/focus/ensure/status actions
+- wrapper open/focus/ensure/status/reset actions
 - lightweight remembered wrapper state
 - quick note workflow via Notepad
-- reusable recipes for search, research, project startup, workspace opening, terminal commands, and VS Code files
+- reusable recipes for search, research, project startup, workspace inspection/resume, terminal commands, and VS Code files
 - cleaner wrapper-oriented API surface
 
 CLI examples:
@@ -93,12 +93,14 @@ app status
 app status: vscode
 app open: notepad
 app ensure: terminal ::: .
+app reset: browser
 app code: .
 app browse: https://example.com
 app note: hello from jarvis
-app recipe: terminal.command ::: python --version
+app recipe: terminal.command ::: . || python --version
 app recipe: browser.search ::: jarvis local assistant
-app recipe: project.starter ::: .
+app recipe: project.inspect ::: .
+app recipe: project.resume
 ```
 
 API endpoints:

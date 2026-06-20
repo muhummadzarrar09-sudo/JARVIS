@@ -46,6 +46,8 @@ def app_action(payload: AppActionRequest) -> dict:
         result = app_wrapper_service.list_recipes()
     elif action in {"status", "state"}:
         result = app_wrapper_service.wrapper_status(payload.name)
+    elif action == "reset":
+        result = app_wrapper_service.reset_wrapper_state(payload.name)
     elif action == "recipe":
         result = app_wrapper_service.run_recipe(payload.name or "", target=payload.target, text=payload.text)
     elif action == "open":

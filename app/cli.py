@@ -50,6 +50,7 @@ def _command_help_text() -> str:
         "  app open: <name> [::: target]\n"
         "  app ensure: <name> [::: target]\n"
         "  app focus: <name> | app focusexact: <name>\n"
+        "  app reset[: <name>|all]\n"
         "  app recipe: <name> [::: payload]\n"
         "  app note: <text>\n"
         "  app explore: <path> | app code: <path> | app browse: <url>\n"

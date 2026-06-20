@@ -197,6 +197,15 @@ class Orchestrator:
             result = app_wrapper_service.wrapper_status(raw_app_status.strip())
             return "app_status", raw_app_status.strip(), result
 
+        if lowered == "app reset":
+            result = app_wrapper_service.reset_wrapper_state(None)
+            return "app_reset", "all", result
+
+        raw_app_reset = self._tail_after_prefixes(normalized, lowered, ["app reset:", "app reset "])
+        if raw_app_reset is not None:
+            result = app_wrapper_service.reset_wrapper_state(raw_app_reset.strip())
+            return "app_reset", raw_app_reset.strip(), result
+
         raw_app_recipe = self._tail_after_prefixes(normalized, lowered, ["app recipe:", "app recipe "])
         if raw_app_recipe is not None:
             if ":::" in raw_app_recipe:

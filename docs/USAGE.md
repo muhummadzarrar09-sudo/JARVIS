@@ -141,7 +141,7 @@ app status: vscode
 app state: browser
 ```
 
-### Open or ensure higher-level wrappers
+### Open, ensure, or reset higher-level wrappers
 ```text
 app open: notepad
 app open: explorer ::: .
@@ -149,6 +149,7 @@ app open: vscode ::: .
 app open: browser ::: https://example.com
 app ensure: terminal ::: .
 app ensure: browser ::: https://example.com
+app reset: browser
 ```
 
 ### Wrapper shortcuts
@@ -165,12 +166,16 @@ app recipe: note.quick ::: hello from jarvis
 app recipe: explorer.workspace ::: .
 app recipe: vscode.project ::: .
 app recipe: vscode.file ::: README.md
+app recipe: vscode.readme ::: .
 app recipe: terminal.project ::: .
 app recipe: terminal.command ::: python -m uvicorn app.main:app --reload
+app recipe: terminal.command ::: . || python --version
 app recipe: browser.search ::: jarvis local assistant
 app recipe: browser.research ::: local ai agents
 app recipe: browser.snapshot ::: https://example.com
+app recipe: project.inspect ::: .
 app recipe: project.starter ::: .
+app recipe: project.resume
 ```
 
 ## Desktop control starter

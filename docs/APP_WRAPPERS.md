@@ -19,18 +19,22 @@ Wrappers give JARVIS reusable app-specific entry points with cleaner commands an
 - `explorer.workspace`
 - `vscode.project`
 - `vscode.file`
+- `vscode.readme`
 - `terminal.project`
 - `terminal.command`
 - `browser.search`
 - `browser.research`
 - `browser.snapshot`
+- `project.inspect`
 - `project.starter`
+- `project.resume`
 
 ## Smarter wrapper behavior
 Wrappers now maintain lightweight remembered state such as:
 - last target/path/url
 - last recipe used
 - last known successful action
+- last query / last command where relevant
 
 That allows commands like `app ensure` to reuse prior targets where it makes sense.
 
@@ -45,7 +49,7 @@ app status: browser
 app state: vscode
 ```
 
-### Open / ensure wrappers
+### Open / ensure / reset wrappers
 ```text
 app open: notepad
 app open: calculator
@@ -55,6 +59,8 @@ app open: browser ::: https://example.com
 app open: terminal
 app ensure: terminal ::: .
 app ensure: browser ::: https://example.com
+app reset: browser
+app reset
 ```
 
 ### Focus wrappers
@@ -77,12 +83,16 @@ app recipe: note.quick ::: hello from jarvis
 app recipe: explorer.workspace ::: .
 app recipe: vscode.project ::: .
 app recipe: vscode.file ::: README.md
+app recipe: vscode.readme ::: .
 app recipe: terminal.project ::: .
 app recipe: terminal.command ::: python -m uvicorn app.main:app --reload
+app recipe: terminal.command ::: . || python --version
 app recipe: browser.search ::: jarvis local assistant
 app recipe: browser.research ::: local ai agents
 app recipe: browser.snapshot ::: https://example.com
+app recipe: project.inspect ::: .
 app recipe: project.starter ::: .
+app recipe: project.resume
 ```
 
 ## API

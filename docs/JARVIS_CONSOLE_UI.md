@@ -23,6 +23,7 @@ Keep the speed and seriousness of a code-first terminal assistant while making i
 ### JARVIS-specific twist
 Instead of copying Claude Code exactly, the JARVIS console should add:
 - wrapper/app awareness
+- remembered wrapper targets/state
 - session continuity state
 - desktop/browser active status
 - audit/action visibility

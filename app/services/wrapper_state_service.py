@@ -49,5 +49,18 @@ class WrapperStateService:
         self._save(data)
         return current
 
+    def clear_state(self, wrapper_name: str) -> dict[str, Any]:
+        data = self._load()
+        wrappers = data.setdefault("wrappers", {})
+        existed = wrapper_name in wrappers
+        wrappers.pop(wrapper_name, None)
+        self._save(data)
+        return {"ok": True, "wrapper": wrapper_name, "cleared": existed}
+
+    def clear_all(self) -> dict[str, Any]:
+        data = {"wrappers": {}}
+        self._save(data)
+        return {"ok": True, "cleared_all": True}
+
 
 wrapper_state_service = WrapperStateService()

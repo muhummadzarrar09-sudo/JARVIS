@@ -57,6 +57,7 @@ This roadmap turns the vision into a build sequence with current status.
 - [x] app-level action wrappers starter
 - [x] richer app-specific workflow recipes starter
 - [x] wrapper-specific state persistence starter
+- [x] workspace-aware wrapper recipes starter
 - [ ] exact window activation hardening beyond title matching
 - [ ] richer desktop safety/undo policies
 - [ ] smarter wrapper/recipe branching from live app state

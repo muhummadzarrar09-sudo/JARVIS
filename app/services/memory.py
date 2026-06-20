@@ -76,5 +76,88 @@ class MemoryService:
         rows.reverse()
         return [{"role": r[0], "content": r[1], "created_at": r[2]} for r in rows]
 
+    def _first_user_message(self, conn: sqlite3.Connection, session_id: str) -> str:
+        row = conn.execute(
+            """
+            SELECT content
+            FROM messages
+            WHERE session_id = ? AND role = 'user'
+            ORDER BY id ASC
+            LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        return (row[0] if row else "Untitled session")[:80]
+
+    def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    s.session_id,
+                    s.created_at,
+                    s.updated_at,
+                    COUNT(m.id) AS message_count,
+                    MAX(m.created_at) AS last_message_at
+                FROM sessions s
+                LEFT JOIN messages m ON m.session_id = s.session_id
+                GROUP BY s.session_id, s.created_at, s.updated_at
+                ORDER BY s.updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+            items = []
+            for row in rows:
+                items.append(
+                    {
+                        "session_id": row[0],
+                        "created_at": row[1],
+                        "updated_at": row[2],
+                        "message_count": row[3],
+                        "title": self._first_user_message(conn, row[0]),
+                        "last_message_at": row[4],
+                    }
+                )
+        return items
+
+    def session_overview(self, session_id: str) -> dict[str, Any]:
+        with sqlite3.connect(self.db_path) as conn:
+            session_row = conn.execute(
+                "SELECT session_id, created_at, updated_at FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if not session_row:
+                return {"ok": False, "error": f"Session not found: {session_id}"}
+
+            stats_row = conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS message_count,
+                    SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END) AS user_messages,
+                    SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END) AS assistant_messages,
+                    MAX(created_at) AS last_message_at
+                FROM messages
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            ).fetchone()
+            title = self._first_user_message(conn, session_id)
+
+        recent = self.recent_messages(session_id, limit=8)
+        return {
+            "ok": True,
+            "session_id": session_row[0],
+            "created_at": session_row[1],
+            "updated_at": session_row[2],
+            "message_count": stats_row[0] or 0,
+            "user_messages": stats_row[1] or 0,
+            "assistant_messages": stats_row[2] or 0,
+            "title": title,
+            "last_message_at": stats_row[3],
+            "recent_messages": recent,
+        }
+
 
 memory_service = MemoryService()

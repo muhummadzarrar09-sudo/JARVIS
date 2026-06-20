@@ -39,6 +39,21 @@ browser text
 browser click: text=More information
 ```
 
+Shorthand also works now:
+```text
+browser click I'm Feeling Lucky
+```
+
+### Inspect why a selector is failing
+```text
+browser inspect: text=I'm Feeling Lucky
+```
+
+### Force-click a matched element
+```text
+browser forceclick: text=I'm Feeling Lucky
+```
+
 ### Fill a field
 ```text
 browser fill: input[name='q'] ::: jarvis local agent

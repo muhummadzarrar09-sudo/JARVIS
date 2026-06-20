@@ -133,6 +133,7 @@ Convenience scripts:
 .\scripts\start-api.ps1
 .\scripts\start-cli.ps1
 .\scripts\install-browser.ps1
+.\scripts\install-desktop.ps1
 .\scripts\download-models.ps1
 ```
 
@@ -153,7 +154,20 @@ This repo includes:
 - shell tool service
 - filesystem tool service
 - browser automation tool service
+- process / laptop-control groundwork
+- desktop control starter layer
+- session checkpoint groundwork for handoff
+- task management + session overview endpoints
 - PowerShell bootstrap script
+
+## Planning docs
+- `docs/ROADMAP_V1.md` — current roadmap + status, including desktop app timing
+- `docs/PHASE_PLAN.md` — high-level phase sequence
+- `docs/CONTROL_PHASES.md` — control/continuity extensions
+- `docs/DESKTOP_MODE.md` — desktop control starter commands
+- `docs/APP_WRAPPERS.md` — higher-level application wrappers and recipes
+- `docs/JARVIS_CONSOLE_UI.md` — terminal UI direction inspired by Claude Code, but JARVIS-specific
+- `docs/USAGE.md` — practical commands and examples
 
 ## Next recommended move
 

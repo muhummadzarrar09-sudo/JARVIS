@@ -7,3 +7,5 @@ __pycache__/
 data/logs/*.jsonl
 data/models/*.gguf
 data/browser/*.png
+data/desktop/*.png
+data/checkpoints/*.json

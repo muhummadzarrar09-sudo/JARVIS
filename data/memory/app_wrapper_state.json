@@ -1,0 +1,19 @@
+{
+  "wrappers": {
+    "browser": {
+      "last_action": "ensure",
+      "last_target": "https://example.com",
+      "last_url": "https://example.com",
+      "last_result_ok": false,
+      "updated_at": "2026-06-20T05:41:42.132277+00:00"
+    },
+    "terminal": {
+      "last_action": "ensure",
+      "last_result_ok": false,
+      "updated_at": "2026-06-20T05:41:42.138058+00:00",
+      "last_focus_exact": false,
+      "last_recipe": "terminal.command",
+      "last_command": "python --version"
+    }
+  }
+}

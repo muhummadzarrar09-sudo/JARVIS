@@ -41,8 +41,12 @@ def browser_action(payload: BrowserActionRequest) -> dict:
         result = browser_tool.title()
     elif action == "text":
         result = browser_tool.text_snapshot(max_chars=payload.max_chars)
+    elif action == "inspect":
+        result = browser_tool.inspect(payload.selector or "")
     elif action == "click":
-        result = browser_tool.click(payload.selector or "")
+        result = browser_tool.click(payload.selector or "", force=False)
+    elif action == "forceclick":
+        result = browser_tool.click(payload.selector or "", force=True)
     elif action == "fill":
         result = browser_tool.fill(payload.selector or "", payload.text or "")
     elif action == "press":

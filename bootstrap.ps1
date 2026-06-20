@@ -338,8 +338,21 @@ if (-not $SkipOptionalInstalls) {
     } else {
         Write-Warning "Playwright package install failed. Browser mode will be unavailable until fixed."
     }
+
+    Write-Step "Installing desktop-control tooling (best effort)"
+    $desktopInstalled = Invoke-NativeBestEffort "Desktop package install" $venvPip @("install", "-r", "requirements-desktop.txt")
+    if ($desktopInstalled) {
+        $desktopImportOk = Invoke-NativeBestEffort "Desktop import check" $venvPython @("-c", "import pyautogui, pygetwindow; print('desktop-ok')")
+        if ($desktopImportOk) {
+            Write-Host "Desktop control packages installed successfully" -ForegroundColor Green
+        } else {
+            Write-Warning "Desktop control packages installed but import check failed. Reinstall with .\\scripts\\install-desktop.ps1 if needed."
+        }
+    } else {
+        Write-Warning "Desktop control package install failed. Desktop mode will be unavailable until fixed."
+    }
 } else {
-    Write-Warning "Skipping optional installs by request. llama-cpp-python and Playwright were not installed."
+    Write-Warning "Skipping optional installs by request. llama-cpp-python, Playwright, and desktop tooling were not installed."
 }
 
 Write-Step "Creating local folders"
@@ -349,7 +362,9 @@ $folders = @(
     "data\memory",
     "data\logs",
     "data\uploads",
-    "data\browser"
+    "data\browser",
+    "data\desktop",
+    "data\checkpoints"
 )
 
 foreach ($folder in $folders) {

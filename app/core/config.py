@@ -33,5 +33,16 @@ class Settings(BaseSettings):
     browser_default_timeout_ms: int = Field(default=15000, alias="BROWSER_DEFAULT_TIMEOUT_MS")
     browser_artifact_dir: Path = Field(default=Path("./data/browser"), alias="BROWSER_ARTIFACT_DIR")
 
+    allow_process_tool: bool = Field(default=True, alias="ALLOW_PROCESS_TOOL")
+    process_start_timeout_seconds: int = Field(default=5, alias="PROCESS_START_TIMEOUT_SECONDS")
+
+    allow_desktop_tool: bool = Field(default=True, alias="ALLOW_DESKTOP_TOOL")
+    desktop_artifact_dir: Path = Field(default=Path("./data/desktop"), alias="DESKTOP_ARTIFACT_DIR")
+    desktop_key_interval_seconds: float = Field(default=0.01, alias="DESKTOP_KEY_INTERVAL_SECONDS")
+    desktop_action_pause_seconds: float = Field(default=0.1, alias="DESKTOP_ACTION_PAUSE_SECONDS")
+
+    checkpoint_dir: Path = Field(default=Path("./data/checkpoints"), alias="CHECKPOINT_DIR")
+    wrapper_state_path: Path = Field(default=Path("./data/memory/app_wrapper_state.json"), alias="WRAPPER_STATE_PATH")
+
 
 settings = Settings()

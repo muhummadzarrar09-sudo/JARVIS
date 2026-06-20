@@ -78,6 +78,44 @@ class BrowserTool:
         result = self.start()
         return bool(result.get("ok")), result
 
+    def _locator_diagnostics(self, selector: str) -> dict[str, Any]:
+        ok, result = self._ensure_page()
+        if not ok:
+            return result or {"ok": False, "error": "Browser unavailable."}
+
+        try:
+            assert self._page is not None
+            locator = self._page.locator(selector)
+            count = locator.count()
+            info: dict[str, Any] = {
+                "ok": True,
+                "selector": selector,
+                "count": count,
+                "url": self._page.url,
+                "title": self._page.title(),
+                "samples": [],
+            }
+            max_samples = min(count, 3)
+            for i in range(max_samples):
+                sample = locator.nth(i)
+                item: dict[str, Any] = {
+                    "index": i,
+                    "visible": sample.is_visible(),
+                    "enabled": sample.is_enabled(),
+                }
+                try:
+                    item["text"] = sample.inner_text(timeout=1000)[:200]
+                except Exception:
+                    item["text"] = None
+                try:
+                    item["html"] = sample.evaluate("el => el.outerHTML.slice(0, 300)")
+                except Exception:
+                    item["html"] = None
+                info["samples"].append(item)
+            return info
+        except Exception as e:
+            return {"ok": False, "error": str(e), "selector": selector}
+
     def state(self) -> dict[str, Any]:
         if not self._page:
             return {"ok": True, "started": False, "url": None, "title": None}
@@ -156,7 +194,12 @@ class BrowserTool:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def click(self, selector: str) -> dict[str, Any]:
+    def inspect(self, selector: str) -> dict[str, Any]:
+        if not selector.strip():
+            return {"ok": False, "error": "Selector is required."}
+        return self._locator_diagnostics(selector)
+
+    def click(self, selector: str, force: bool = False) -> dict[str, Any]:
         if not selector.strip():
             return {"ok": False, "error": "Selector is required."}
         ok, result = self._ensure_page()
@@ -164,10 +207,23 @@ class BrowserTool:
             return result or {"ok": False, "error": "Browser unavailable."}
         try:
             assert self._page is not None
-            self._page.locator(selector).first.click()
-            return {"ok": True, "action": "click", "selector": selector, "url": self._page.url}
+            locator = self._page.locator(selector).first
+            try:
+                locator.scroll_into_view_if_needed(timeout=3000)
+            except Exception:
+                pass
+            locator.click(force=force)
+            return {"ok": True, "action": "click", "selector": selector, "force": force, "url": self._page.url}
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            diagnostics = self._locator_diagnostics(selector)
+            return {
+                "ok": False,
+                "error": str(e),
+                "selector": selector,
+                "force": force,
+                "diagnostics": diagnostics,
+                "hint": "If the element exists but is hidden, try browser inspect or browser forceclick. For Google search, filling the search box and pressing Enter is usually more reliable.",
+            }
 
     def fill(self, selector: str, text: str) -> dict[str, Any]:
         if not selector.strip():

@@ -27,6 +27,7 @@ def _command_help_text() -> str:
         "  /exit                 quit\n"
         "  /help                 show this help\n"
         "  /status               show JARVIS dashboard\n"
+        "  /today                show a simple day brief\n"
         "  /wrappers             show wrapper status\n"
         "  /recipes              show wrapper recipes\n"
         "  /projects             show current project context\n"
@@ -36,11 +37,15 @@ def _command_help_text() -> str:
         "  /palette              show starter command palette\n"
         "  /starter              show beginner-friendly starter guide\n"
         "  /next                 show suggested next actions\n"
+        "  /focus                show your current focus\n"
         "  /tasks                show open tasks\n"
+        "  /work                 start the next task\n"
+        "  /done                 finish the current task\n"
         "  /sessions             show recent sessions\n"
-        "  /use <session_id>     switch to a recent session (full or short id)\n"
+        "  /use <session_id>     switch to a recent session (full id, short id, or list number)\n"
         "  /resume               switch to the most recent other session\n"
         "  /find <text>          search beginner commands\n"
+        "  /do <goal>            run a simple natural-language goal\n"
         "  /tools                show tool registry summary\n"
         "  /clear                clear terminal\n"
         "  shell: <command>      run a shell command\n"
@@ -263,6 +268,43 @@ def _next_steps_panel() -> Panel:
     return Panel.fit(body, title="Suggested Next Actions", border_style="bright_green")
 
 
+def _today_panel() -> Panel:
+    today = quick_actions_service.today_brief()
+    if not today.get("ok"):
+        return Panel.fit("No day brief available.", title="Today", border_style="yellow")
+    lines = [today.get("headline") or "Today"]
+    task_summary = today.get("task_summary", {})
+    if task_summary:
+        lines.append(f"Tasks — open: {task_summary.get('open', 0)}, in progress: {task_summary.get('in_progress', 0)}, done: {task_summary.get('done', 0)}")
+    browser = today.get("browser", {})
+    if browser:
+        if browser.get("started"):
+            lines.append(f"Browser: {browser.get('title') or browser.get('url')}")
+        elif browser.get("remembered_url"):
+            lines.append(f"Last browser page: {browser.get('remembered_url')}")
+    next_steps = today.get("next_steps", [])[:4]
+    if next_steps:
+        lines.append("")
+        lines.append("Try next:")
+        lines.extend(f"• {item}" for item in next_steps)
+    return Panel.fit("\n".join(lines), title="Today Brief", border_style="bright_cyan")
+
+
+def _focus_panel() -> Panel:
+    focus = quick_actions_service.focus()
+    if not focus.get("ok"):
+        return Panel.fit("No current focus available.", title="Current Focus", border_style="yellow")
+    lines = [focus.get("headline", "Current Focus")]
+    if focus.get("project_path"):
+        lines.append(f"Project: {focus.get('project_path')}")
+    recs = focus.get("recommended", [])[:4]
+    if recs:
+        lines.append("")
+        lines.append("Try next:")
+        lines.extend(f"• {item}" for item in recs)
+    return Panel.fit("\n".join(lines), title="Current Focus", border_style="bright_magenta")
+
+
 def _starter_panel() -> Panel:
     guide = quick_actions_service.guide()
     blocks = []
@@ -359,7 +401,7 @@ def _print_banner(session_id: str) -> None:
         )
     )
     _print_dashboard(session_id)
-    console.print("[dim]Tip: use /starter, /next, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /sessions, or /tools for console panels.[/dim]")
+    console.print("[dim]Tip: use /starter, /today, /next, /focus, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /tasks, /sessions, or /tools for console panels.[/dim]")
 
 
 def _approve_if_needed(user_input: str) -> bool:
@@ -411,6 +453,7 @@ def repl(session_id: Optional[str] = None) -> None:
 
         if not user_input:
             continue
+        lowered_input = user_input.lower()
         if user_input in {"/exit", "exit", "quit"}:
             console.print("[bold yellow]Session ended.[/bold yellow]")
             break
@@ -419,6 +462,9 @@ def repl(session_id: Optional[str] = None) -> None:
             continue
         if user_input == "/status":
             _print_dashboard(sid)
+            continue
+        if user_input == "/today":
+            console.print(_today_panel())
             continue
         if user_input == "/wrappers":
             console.print(_wrapper_status_table())
@@ -447,13 +493,22 @@ def repl(session_id: Optional[str] = None) -> None:
         if user_input == "/next":
             console.print(_next_steps_panel())
             continue
+        if user_input == "/focus":
+            console.print(_focus_panel())
+            continue
         if user_input == "/tasks":
             console.print(_tasks_table(limit=12))
             continue
+        if user_input == "/work":
+            user_input = "work on next task"
+            lowered_input = user_input.lower()
+        if user_input == "/done":
+            user_input = "complete current task"
+            lowered_input = user_input.lower()
         if user_input == "/sessions":
             console.print(_sessions_table(current_session_id=sid, limit=12))
             continue
-        if user_input == "/resume":
+        if user_input in {"/resume", "resume last session", "switch to last session"}:
             sessions = memory_service.list_sessions(limit=3)
             target = next((item.get("session_id") for item in sessions if item.get("session_id") != sid), None)
             if target:
@@ -463,8 +518,8 @@ def repl(session_id: Optional[str] = None) -> None:
             else:
                 console.print("[yellow]No other recent session to resume.[/yellow]")
             continue
-        if user_input.startswith("/use "):
-            candidate = user_input[5:].strip()
+        if user_input.startswith("/use ") or lowered_input.startswith("switch to session "):
+            candidate = user_input[5:].strip() if user_input.startswith("/use ") else user_input[len("switch to session "):].strip()
             resolved = None
             if candidate.isdigit():
                 index = int(candidate)
@@ -485,6 +540,11 @@ def repl(session_id: Optional[str] = None) -> None:
             query = user_input[6:].strip()
             console.print(_search_panel(query))
             continue
+        if user_input.startswith("/do "):
+            user_input = user_input[4:].strip()
+            if not user_input:
+                console.print("[yellow]Tell JARVIS what you want after /do[/yellow]")
+                continue
         if user_input == "/tools":
             console.print(_tools_table())
             continue

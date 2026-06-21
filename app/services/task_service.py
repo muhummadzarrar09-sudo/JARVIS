@@ -81,14 +81,34 @@ class TaskService:
             conn.commit()
         return self.get_task(task_id)
 
-    def next_task(self) -> dict[str, Any]:
+    def current_task(self) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT id, title, status, priority, notes, session_id, created_at, updated_at
                 FROM tasks
-                WHERE status IN ('in_progress', 'open')
-                ORDER BY CASE status WHEN 'in_progress' THEN 0 ELSE 1 END, id ASC
+                WHERE status = 'in_progress'
+                ORDER BY id ASC
+                LIMIT 1
+                """
+            ).fetchone()
+        if not row:
+            return {"ok": False, "error": "No task is currently in progress."}
+        task = self._row_to_dict(row)
+        task["ok"] = True
+        return task
+
+    def next_task(self) -> dict[str, Any]:
+        current = self.current_task()
+        if current.get("ok"):
+            return current
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id, title, status, priority, notes, session_id, created_at, updated_at
+                FROM tasks
+                WHERE status = 'open'
+                ORDER BY id ASC
                 LIMIT 1
                 """
             ).fetchone()

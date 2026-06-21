@@ -1,11 +1,13 @@
 from pathlib import Path
 import shutil
+import importlib.util
 from typing import Any
 from urllib.parse import quote_plus
 
 from app.core.config import settings
 from app.services.browser_tool import browser_tool
 from app.services.desktop_tool import desktop_tool
+from app.services.file_tool import file_tool
 from app.services.process_tool import process_tool
 from app.services.wrapper_state_service import wrapper_state_service
 
@@ -134,6 +136,18 @@ class AppWrapperService:
                 "inputs": ["path?"],
                 "risk": "low",
                 "notes": "Inspect a workspace path, detect common project files, and remember it for wrappers.",
+            },
+            "project.review": {
+                "aliases": ["workspace.review", "reviewproject"],
+                "inputs": ["path?"],
+                "risk": "low",
+                "notes": "Inspect the project and open or preview the README so you can quickly understand the workspace.",
+            },
+            "coding.start": {
+                "aliases": ["startcoding", "workspace.code"],
+                "inputs": ["path?"],
+                "risk": "high",
+                "notes": "Get ready to code by opening the project in code and terminal flows.",
             },
             "project.starter": {
                 "aliases": ["workspace.start", "project.start"],
@@ -332,6 +346,73 @@ class AppWrapperService:
             return path, command
         return None, raw
 
+    def _readme_fallback(self, readme_path: str, summary: dict[str, Any], reason: str) -> dict[str, Any]:
+        workspace_root = str(self._workspace_root())
+        try:
+            readme_rel = str(Path(readme_path).resolve().relative_to(self._workspace_root()))
+        except Exception:
+            readme_rel = readme_path
+        preview_result = file_tool.read_text(readme_rel)
+        return {
+            "ok": True,
+            "fallback": "readme_preview",
+            "reason": reason,
+            "workspace_root": workspace_root,
+            "readme": readme_path,
+            "summary": summary,
+            "preview": preview_result.get("content") if preview_result.get("ok") else summary.get("readme_preview"),
+            "preview_ok": preview_result.get("ok", False),
+        }
+
+    def _directory_fallback(self, target: str, reason: str) -> dict[str, Any]:
+        summary = self._project_summary(target)
+        listing = file_tool.list_dir(target)
+        return {
+            "ok": True,
+            "fallback": "directory_listing",
+            "reason": reason,
+            "target": target,
+            "summary": summary if summary.get("ok") else None,
+            "listing": listing,
+        }
+
+    def _browser_link_fallback(self, url: str, reason: str, query: str | None = None) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "fallback": "browser_link",
+            "reason": reason,
+            "plain_english": "JARVIS could not control the browser here, so it prepared a link you can open manually.",
+            "url": url,
+            "query": query,
+            "manual_steps": [
+                "Open any browser on your computer.",
+                f"Paste this URL: {url}",
+            ],
+            "next_action": f"Open this link manually: {url}",
+        }
+
+    def _workspace_start_fallback(self, path: str, reason: str) -> dict[str, Any]:
+        summary = self._project_summary(path)
+        listing = file_tool.list_dir(path)
+        readme = None
+        if summary.get("ok") and summary.get("readme"):
+            readme = self._readme_fallback(summary.get("readme"), summary, "JARVIS could not open the coding apps here, so it returned the README preview instead.")
+        return {
+            "ok": True,
+            "fallback": "workspace_start_fallback",
+            "reason": reason,
+            "target": path,
+            "summary": summary if summary.get("ok") else None,
+            "listing": listing,
+            "readme_preview": readme,
+            "manual_steps": [
+                f"Open this project folder manually: {path}",
+                "If you have VS Code installed, open the folder there.",
+                "If you have a terminal available, open it in that folder to continue working.",
+            ],
+            "next_action": f"Start from this project folder: {path}",
+        }
+
     def current_project_context(self, target: str | None = None) -> dict[str, Any]:
         preferred = self._preferred_project_target(target)
         summary = self._project_summary(preferred)
@@ -361,10 +442,21 @@ class AppWrapperService:
 
     def current_browser_context(self) -> dict[str, Any]:
         state = browser_tool.state()
+        remembered = wrapper_state_service.get_state("browser")
         if not state.get("ok"):
             return state
         if not state.get("started"):
-            return {"ok": True, "started": False, "url": None, "title": None, "text": None}
+            remembered_url = remembered.get("last_url") or remembered.get("last_target")
+            return {
+                "ok": True,
+                "started": False,
+                "url": None,
+                "title": None,
+                "text": None,
+                "remembered_url": remembered_url,
+                "plain_english": "No live browser session is running right now." if not remembered_url else "No live browser session is open, but JARVIS remembers your last page.",
+                "next_action": "Say: open browser" if not remembered_url else "Say: show me the current page or resume browser",
+            }
         title = browser_tool.title()
         text = browser_tool.text_snapshot(max_chars=2000)
         return {
@@ -374,6 +466,7 @@ class AppWrapperService:
             "title": title.get("title") or state.get("title"),
             "text": text.get("text"),
             "text_truncated": text.get("truncated"),
+            "remembered_url": remembered.get("last_url") or remembered.get("last_target"),
         }
 
     def wrapper_doctor(self, name: str | None = None) -> dict[str, Any]:
@@ -392,11 +485,13 @@ class AppWrapperService:
             state = wrapper_state_service.get_state(canonical)
             tool_status = self.wrapper_status(canonical)
             if canonical == "browser":
+                playwright_installed = importlib.util.find_spec("playwright") is not None
                 items.append(
                     {
                         "name": canonical,
-                        "ready": browser_context.get("ok", False) or not browser_context.get("started", False),
+                        "ready": playwright_installed,
                         "notes": "Requires Playwright + Chromium locally.",
+                        "playwright_installed": playwright_installed,
                         "status": tool_status.get("item"),
                         "context": browser_context,
                         "remembered_state": state,
@@ -606,7 +701,17 @@ class AppWrapperService:
             url = (target or "https://example.com").strip()
             open_result = self.open_url_in_browser(url)
             steps.append({"step": "open_or_navigate_browser", "result": open_result})
-            result = {"ok": self._steps_ok(steps), "wrapper": canonical, "target": url, "workflow": "ensure", "steps": steps}
+            result = {
+                "ok": self._steps_ok(steps),
+                "wrapper": canonical,
+                "target": url,
+                "workflow": "ensure",
+                "steps": steps,
+            }
+            if open_result.get("fallback"):
+                result["fallback"] = open_result.get("fallback")
+                result["reason"] = open_result.get("reason")
+                result["manual_steps"] = open_result.get("manual_steps")
             self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=url, last_url=url)
             return result
 
@@ -658,18 +763,42 @@ class AppWrapperService:
         path = target.strip()
         if not path:
             return {"ok": False, "error": "Path is required."}
+        doctor = self.wrapper_doctor("explorer")
+        item = doctor.get("item") or {}
+        if item and not item.get("ready"):
+            fallback = self._directory_fallback(path, "File Explorer is not ready here, so JARVIS returned the folder contents instead.")
+            self._remember_wrapper("explorer", last_path=path, last_target=path, last_result_ok=fallback.get("ok"))
+            return fallback
         return self.open_app("explorer", target=path)
 
     def open_path_in_vscode(self, target: str) -> dict[str, Any]:
         path = target.strip()
         if not path:
             return {"ok": False, "error": "Path is required."}
+        doctor = self.wrapper_doctor("vscode")
+        item = doctor.get("item") or {}
+        if item and not item.get("ready"):
+            summary = self._project_summary(path)
+            readme = summary.get("readme") if summary.get("ok") else None
+            if readme:
+                fallback = self._readme_fallback(readme, summary, "VS Code is not ready here, so JARVIS returned the project README preview instead.")
+                self._remember_wrapper("vscode", last_path=path, last_target=path, last_result_ok=fallback.get("ok"))
+                return fallback
+            fallback = self._directory_fallback(path, "VS Code is not ready here, so JARVIS returned the project folder contents instead.")
+            self._remember_wrapper("vscode", last_path=path, last_target=path, last_result_ok=fallback.get("ok"))
+            return fallback
         return self.open_app("vscode", target=path)
 
     def open_url_in_browser(self, url: str) -> dict[str, Any]:
         clean_url = url.strip()
         if not clean_url:
             return {"ok": False, "error": "URL is required."}
+        doctor = self.wrapper_doctor("browser")
+        item = doctor.get("item") or {}
+        if item and not item.get("ready"):
+            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.")
+            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_result_ok=fallback.get("ok"))
+            return fallback
         return self.open_app("browser", target=clean_url)
 
     def run_recipe(self, name: str, target: str | None = None, text: str | None = None) -> dict[str, Any]:
@@ -720,19 +849,38 @@ class AppWrapperService:
             readme = summary.get("readme")
             if not readme:
                 return {"ok": False, "error": "No README-like file found in that workspace path.", "summary": summary}
+
+            doctor = self.wrapper_doctor("vscode")
+            doctor_item = doctor.get("item") or {}
+            if doctor_item and not doctor_item.get("ready"):
+                fallback = self._readme_fallback(readme, summary, "VS Code launcher is not ready, so JARVIS showed the README preview instead.")
+                self._remember_wrapper("vscode", last_recipe=canonical, last_path=readme, last_target=readme, last_result_ok=fallback.get("ok"))
+                return fallback
+
             open_result = self.open_app("vscode", target=readme)
             steps.append({"step": "open_readme_in_vscode", "result": open_result})
             focus_result = self.focus_app("vscode")
             steps.append({"step": "focus_vscode", "result": focus_result})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "readme": readme, "summary": summary, "steps": steps}
+            if not result.get("ok"):
+                fallback = self._readme_fallback(readme, summary, "VS Code could not be opened here, so JARVIS returned the README preview instead.")
+                self._remember_wrapper("vscode", last_recipe=canonical, last_path=readme, last_target=readme, last_result_ok=fallback.get("ok"))
+                return fallback
             self._remember_wrapper("vscode", last_recipe=canonical, last_path=readme, last_target=readme, last_result_ok=result.get("ok"))
             return result
 
         if canonical == "vscode.resume":
             vscode_state = wrapper_state_service.get_state("vscode")
             remembered_target = payload or vscode_state.get("last_path") or vscode_state.get("last_target")
+            doctor = self.wrapper_doctor("vscode")
+            doctor_item = doctor.get("item") or {}
             if remembered_target:
-                if Path(remembered_target).is_file():
+                remembered_path = Path(remembered_target)
+                if remembered_path.is_file():
+                    if doctor_item and not doctor_item.get("ready"):
+                        fallback = self._readme_fallback(str(remembered_path), {"path": str(remembered_path.parent), "readme": str(remembered_path), "readme_preview": self._read_text_preview(remembered_path)}, "VS Code launcher is not ready, so JARVIS showed the remembered file preview instead.")
+                        self._remember_wrapper("vscode", last_recipe=canonical, last_path=remembered_target, last_target=remembered_target, last_result_ok=fallback.get("ok"))
+                        return fallback
                     open_result = self.open_app("vscode", target=remembered_target)
                     steps.append({"step": "open_remembered_file", "result": open_result})
                     focus_result = self.focus_app("vscode")
@@ -780,6 +928,10 @@ class AppWrapperService:
             url = f"https://duckduckgo.com/?q={quote_plus(query)}"
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_search_results", "result": open_result})
+            if open_result.get("fallback") == "browser_link":
+                result = {"ok": True, "recipe": canonical, "query": query, "url": url, "steps": steps}
+                self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=True)
+                return result
             title_result = browser_tool.title()
             steps.append({"step": "read_browser_title", "result": title_result})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "query": query, "url": url, "steps": steps}
@@ -806,6 +958,10 @@ class AppWrapperService:
             url = f"https://duckduckgo.com/?q={quote_plus(query)}"
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_search_results", "result": open_result})
+            if open_result.get("fallback") == "browser_link":
+                result = {"ok": True, "recipe": canonical, "query": query, "url": url, "steps": steps}
+                self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=True)
+                return result
             title_result = browser_tool.title()
             steps.append({"step": "read_browser_title", "result": title_result})
             text_result = browser_tool.text_snapshot(max_chars=3000)
@@ -827,6 +983,10 @@ class AppWrapperService:
                     return {"ok": False, "error": "This recipe needs a URL. Use app recipe: browser.snapshot ::: https://example.com"}
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_url", "result": open_result})
+            if open_result.get("fallback") == "browser_link":
+                result = {"ok": True, "recipe": canonical, "url": url, "steps": steps}
+                self._remember_wrapper("browser", last_recipe=canonical, last_url=url, last_target=url, last_result_ok=True)
+                return result
             title_result = browser_tool.title()
             steps.append({"step": "read_browser_title", "result": title_result})
             text_result = browser_tool.text_snapshot(max_chars=2500)
@@ -847,7 +1007,17 @@ class AppWrapperService:
             if current.get("ok") and current.get("started"):
                 resume_result = self.run_recipe("browser.snapshot", target=current.get("url"))
                 return {"ok": resume_result.get("ok", False), "recipe": canonical, "target": current.get("url"), "result": resume_result}
-            return {"ok": False, "error": "No remembered or active browser page to resume."}
+            return {
+                "ok": True,
+                "fallback": "browser_link",
+                "reason": "There is no remembered browser page yet, so JARVIS cannot resume one automatically.",
+                "plain_english": "No browser page has been remembered yet. Start with a search or open a page first.",
+                "manual_steps": [
+                    "Say: open browser to https://example.com",
+                    "Or say: search for local ai agents",
+                ],
+                "next_action": "Try: search for something or open a page first.",
+            }
 
         if canonical == "project.inspect":
             summary = self._project_summary(self._preferred_project_target(target))
@@ -859,12 +1029,47 @@ class AppWrapperService:
             self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=True)
             return {"ok": True, "recipe": canonical, "summary": summary}
 
+        if canonical == "project.review":
+            path = self._preferred_project_target(target)
+            inspect_result = self.run_recipe("project.inspect", target=path)
+            steps.append({"step": "inspect_project", "result": inspect_result})
+            readme_result = self.run_recipe("vscode.readme", target=path)
+            steps.append({"step": "review_readme", "result": readme_result})
+            return {"ok": self._steps_ok(steps), "recipe": canonical, "target": path, "steps": steps}
+
+        if canonical == "coding.start":
+            path = self._preferred_project_target(target)
+            code_doctor = self.wrapper_doctor("vscode")
+            terminal_doctor = self.wrapper_doctor("terminal")
+            code_ready = (code_doctor.get("item") or {}).get("ready", False)
+            terminal_ready = (terminal_doctor.get("item") or {}).get("ready", False)
+
+            if not code_ready and not terminal_ready:
+                fallback = self._workspace_start_fallback(path, "VS Code and terminal launchers are not ready here, so JARVIS returned a manual project-start pack instead.")
+                self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=fallback.get("ok"))
+                self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=fallback.get("ok"))
+                return fallback
+
+            code_result = self.run_recipe("vscode.project", target=path) if code_ready else self._workspace_start_fallback(path, "VS Code is not ready here, so JARVIS returned a project-start pack instead.")
+            steps.append({"step": "open_code_workspace", "result": code_result})
+            terminal_result = self.run_recipe("terminal.project", target=path) if terminal_ready else self._directory_fallback(path, "The terminal launcher is not ready here, so JARVIS returned the project folder contents instead.")
+            steps.append({"step": "open_project_terminal", "result": terminal_result})
+            result = {"ok": self._steps_ok(steps), "recipe": canonical, "target": path, "steps": steps}
+            self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
+            self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
+            return result
+
         if canonical == "project.starter":
             path = self._preferred_project_target(target)
-            steps.append({"step": "ensure_explorer", "result": self.ensure_app("explorer", target=path)})
-            steps.append({"step": "ensure_vscode", "result": self.ensure_app("vscode", target=path)})
-            steps.append({"step": "ensure_terminal", "result": self.ensure_app("terminal", target=path)})
-            steps.append({"step": "focus_vscode", "result": self.focus_app("vscode")})
+            explorer_ready = (self.wrapper_doctor("explorer").get("item") or {}).get("ready", False)
+            vscode_ready = (self.wrapper_doctor("vscode").get("item") or {}).get("ready", False)
+            terminal_ready = (self.wrapper_doctor("terminal").get("item") or {}).get("ready", False)
+
+            steps.append({"step": "ensure_explorer", "result": self.ensure_app("explorer", target=path) if explorer_ready else self._directory_fallback(path, "File Explorer is not ready here, so JARVIS returned the project folder contents instead.")})
+            steps.append({"step": "ensure_vscode", "result": self.ensure_app("vscode", target=path) if vscode_ready else self._workspace_start_fallback(path, "VS Code is not ready here, so JARVIS returned a project-start pack instead.")})
+            steps.append({"step": "ensure_terminal", "result": self.ensure_app("terminal", target=path) if terminal_ready else self._directory_fallback(path, "The terminal launcher is not ready here, so JARVIS returned the project folder contents instead.")})
+            if vscode_ready:
+                steps.append({"step": "focus_vscode", "result": self.focus_app("vscode")})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "target": path, "steps": steps}
             self._remember_wrapper("explorer", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
             self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))

@@ -68,6 +68,14 @@ app context: .
 /palette
 /tasks
 /sessions
+/resume
+```
+
+Quick beginner shortcut:
+```text
+/do open readme
+/do show my tasks
+/do work on next task
 ```
 
 ### Easy natural commands

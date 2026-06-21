@@ -15,7 +15,9 @@ python -m app.cli repl
 Useful console panels:
 ```text
 /starter
+/today
 /next
+/focus
 /status
 /wrappers
 /recipes
@@ -25,8 +27,18 @@ Useful console panels:
 /replay
 /palette
 /tasks
+/work
+/done
 /sessions
 /tools
+```
+
+Quick beginner shortcut:
+```text
+/do open readme
+/do show my tasks
+/do work on next task
+/do show me today's focus
 ```
 
 ## CLI examples
@@ -153,24 +165,50 @@ proc kill: notepad.exe
 ```text
 help me start
 show my project
+show project overview
+review this project
+show my project files
 what should i do next
+show me where to start
+show me today's focus
 show my tasks
 what task should i do next
+what am i doing now
 work on next task
+complete next task
+wrap up current task
 add task finish setup
 done with task 1
 show my sessions
+show me recent work
+resume last session
 open browser
 open browser to https://example.com
 search for local ai agents
 research local ai agents
+show me the current page
 open code here
 open files here
 open terminal here
 open readme
 resume project
+resume browser
+resume code
+start coding
 take screenshot
 write note remember this idea
+start my workday
+show setup
+get me started
+```
+
+Examples of easy one-shot goals:
+```text
+/do review this project
+/do show my project files
+/do start coding
+/do show me the current page
+/do show me today's focus
 ```
 
 ### List wrappers, recipes, diagnostics, and project context

@@ -66,14 +66,35 @@ class Orchestrator:
         if lowered in {"what can you do", "show examples", "starter commands", "help me start", "help me", "show starter guide"}:
             return "quick_guide", "guide", quick_actions_service.guide()
 
-        if lowered in {"what should i do next", "what next", "show next steps", "show me what to do next"}:
+        if lowered in {"what should i do next", "what next", "show next steps", "show me what to do next", "show me where to start", "where should i start", "get me started"}:
             return "quick_next_steps", "guide", quick_actions_service.next_steps()
 
-        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work"}:
+        if lowered in {"show me today", "today", "give me my day", "show me my day"}:
+            return "quick_today", "guide", quick_actions_service.today_brief()
+
+        if lowered in {"show me today's focus", "what should i focus on", "focus me", "show my focus", "what should i work on right now", "show me my focus"}:
+            return "quick_focus", "guide", quick_actions_service.focus()
+
+        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work", "take me back to my last work"}:
             return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
 
-        if lowered in {"set me up to work on this project", "set up my project", "open my project tools"}:
+        if lowered in {"show me recent work", "what was i doing", "where did i leave off"}:
+            return "quick_recent_work", "recent", quick_actions_service.recent_work_summary()
+
+        if lowered in {"resume last session"}:
+            return "session_list", "recent", {"ok": True, "items": memory_service.list_sessions(limit=10)}
+
+        if lowered in {"set me up to work on this project", "set up my project", "open my project tools", "start my project tools", "start my workday", "get me ready to work"}:
             return "app_recipe", "project.starter", app_wrapper_service.run_recipe("project.starter", target=".")
+
+        if lowered in {"start coding", "set me up to code", "get me ready to code"}:
+            return "app_recipe", "coding.start", app_wrapper_service.run_recipe("coding.start", target=".")
+
+        if lowered in {"review this project", "give me the project overview", "show project overview", "help me review this project"}:
+            return "app_recipe", "project.review", app_wrapper_service.run_recipe("project.review", target=".")
+
+        if lowered in {"show my project files", "show project files", "open my project files"}:
+            return "app_explore", ".", app_wrapper_service.open_path_in_explorer(".")
 
         if lowered in {"show my tasks", "show tasks", "what are my tasks", "what am i working on", "open my tasks"}:
             return "task_list_open", "open", {"ok": True, "items": task_service.list_tasks(status="open", limit=20)}
@@ -83,6 +104,19 @@ class Orchestrator:
 
         if lowered in {"what task should i do next", "next task", "focus me on the next task"}:
             return "task_next", "next", task_service.next_task()
+
+        if lowered in {"what am i doing now", "current task", "what is my current task"}:
+            current = task_service.current_task()
+            return ("task_current", "current", current if current.get("ok") else task_service.next_task())
+
+        if lowered in {"wrap up current task", "finish what i'm doing", "complete current task"}:
+            current = task_service.current_task()
+            if current.get("ok") and current.get("id"):
+                return "task_done", str(current.get("id")), task_service.update_status(int(current.get("id")), "done")
+            fallback = task_service.next_task()
+            if fallback.get("ok") and fallback.get("id"):
+                return "task_done", str(fallback.get("id")), task_service.update_status(int(fallback.get("id")), "done")
+            return "task_next", "next", fallback
 
         if lowered.startswith("add task ") or lowered.startswith("create task "):
             prefix = "add task " if lowered.startswith("add task ") else "create task "
@@ -125,7 +159,7 @@ class Orchestrator:
         if lowered in {"show wrapper status", "show wrappers", "wrapper status"}:
             return "app_status", "apps", app_wrapper_service.wrapper_status(None)
 
-        if lowered in {"check my setup", "check setup", "run doctor", "show doctor"}:
+        if lowered in {"check my setup", "check setup", "run doctor", "show doctor", "are my tools ready", "check if my tools are ready", "show setup"}:
             return "app_doctor", "apps", app_wrapper_service.wrapper_doctor(None)
 
         if lowered in {"show my project", "project info", "what project is this", "inspect project"}:
@@ -150,19 +184,22 @@ class Orchestrator:
             query = normalized[len("research "):].strip()
             return "app_recipe", "browser.research", app_wrapper_service.run_recipe("browser.research", text=query)
 
-        if lowered in {"open code", "open vscode", "open code here", "open this folder in code"}:
-            return "app_ensure", "vscode", app_wrapper_service.ensure_app("vscode", target=".")
+        if lowered in {"show me the current page", "show current page", "what page am i on", "resume browser", "continue browsing"}:
+            return "app_recipe", "browser.resume", app_wrapper_service.run_recipe("browser.resume")
+
+        if lowered in {"open code", "open vscode", "open code here", "open this folder in code", "open my code"}:
+            return "app_code", ".", app_wrapper_service.open_path_in_vscode(".")
 
         if lowered.startswith("open code in "):
             target = normalized[len("open code in "):].strip()
-            return "app_ensure", "vscode", app_wrapper_service.ensure_app("vscode", target=target)
+            return "app_code", target, app_wrapper_service.open_path_in_vscode(target)
 
-        if lowered in {"open files", "open file explorer", "open files here", "open explorer"}:
-            return "app_ensure", "explorer", app_wrapper_service.ensure_app("explorer", target=".")
+        if lowered in {"open files", "open file explorer", "open files here", "open explorer", "open my files"}:
+            return "app_explore", ".", app_wrapper_service.open_path_in_explorer(".")
 
         if lowered.startswith("open files in "):
             target = normalized[len("open files in "):].strip()
-            return "app_ensure", "explorer", app_wrapper_service.ensure_app("explorer", target=target)
+            return "app_explore", target, app_wrapper_service.open_path_in_explorer(target)
 
         if lowered in {"open terminal", "open terminal here", "start terminal"}:
             return "app_ensure", "terminal", app_wrapper_service.ensure_app("terminal", target=".")
@@ -174,8 +211,14 @@ class Orchestrator:
         if lowered in {"resume project", "resume my project"}:
             return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
 
-        if lowered in {"open readme", "show readme", "open readme in code"}:
+        if lowered in {"open readme", "show readme", "open readme in code", "show me the readme"}:
             return "app_recipe", "vscode.readme", app_wrapper_service.run_recipe("vscode.readme", target=".")
+
+        if lowered in {"resume code", "resume vscode"}:
+            return "app_recipe", "vscode.resume", app_wrapper_service.run_recipe("vscode.resume")
+
+        if lowered in {"resume browser", "show me the current page", "continue browsing"}:
+            return "app_recipe", "browser.resume", app_wrapper_service.run_recipe("browser.resume")
 
         if lowered in {"take screenshot", "screenshot", "capture screenshot"}:
             return "desktop_screenshot", "auto", desktop_tool.screenshot(None)
@@ -578,13 +621,25 @@ class Orchestrator:
         status = "✅ Success" if ok else ("⚠ Partial" if ok is None else "❌ Could not complete")
 
         summary = None
-        if tool_name in {"task_create", "task_done", "task_reopen", "task_in_progress", "task_next"}:
+        if isinstance(data.get("plain_english"), str) and data.get("plain_english"):
+            summary = data.get("plain_english")
+        elif tool_name in {"task_create", "task_done", "task_reopen", "task_in_progress", "task_next", "task_current"}:
             if data.get("title"):
                 summary = f"Task: {data.get('title')}"
             elif isinstance(data.get('items'), list):
                 summary = f"Found {len(data.get('items', []))} task item(s)."
         elif tool_name == "session_list" and isinstance(data.get('items'), list):
             summary = f"Found {len(data.get('items', []))} recent session(s)."
+        elif tool_name == "quick_recent_work":
+            summary = "Here is a simple summary of your recent work."
+        elif data.get("fallback") == "readme_preview":
+            summary = "JARVIS showed a README preview instead of opening an app."
+        elif data.get("fallback") == "directory_listing":
+            summary = "JARVIS showed the folder contents instead of opening an app."
+        elif data.get("fallback") == "browser_link":
+            summary = "JARVIS prepared a browser link for you to open manually."
+        elif data.get("fallback") == "workspace_start_fallback":
+            summary = "JARVIS prepared a manual project-start pack instead of opening the missing apps."
         elif tool_name.startswith("app_") and data.get("wrapper"):
             summary = f"Wrapper: {data.get('wrapper')}"
         elif tool_name == "app_project_context" and data.get("path"):
@@ -606,8 +661,22 @@ class Orchestrator:
             tip = "Try: open readme, open code here, open terminal here, or resume project."
         elif tool_name == "session_list":
             tip = "In the terminal, use /sessions and then /use 1 or /resume to switch sessions."
-        elif tool_name in {"task_list_open", "task_next", "task_in_progress"}:
-            tip = "You can say: add task ..., focus on task 2, done with task 2, or reopen task 2."
+        elif tool_name == "quick_today":
+            tip = "You can say: show me today's focus, show my tasks, review this project, or start coding."
+        elif tool_name == "quick_focus":
+            tip = "You can say: work on next task, complete current task, open code here, or open terminal here."
+        elif tool_name == "quick_recent_work":
+            tip = "You can say: resume project, show my sessions, or show me today's focus."
+        elif tool_name in {"task_list_open", "task_next", "task_in_progress", "task_current"}:
+            tip = "You can say: add task ..., focus on task 2, work on next task, complete next task, done with task 2, or reopen task 2."
+        elif data.get("fallback") == "readme_preview":
+            tip = "The app was unavailable, so JARVIS gave you the README directly to keep you moving."
+        elif data.get("fallback") == "directory_listing":
+            tip = "The app was unavailable, so JARVIS showed the folder contents instead."
+        elif data.get("fallback") == "browser_link":
+            tip = "Browser automation was unavailable, so JARVIS gave you a link you can open manually."
+        elif data.get("fallback") == "workspace_start_fallback":
+            tip = "The normal coding apps were unavailable, so JARVIS returned the project essentials you can use manually."
         elif not ok and extracted_error and "Playwright is not installed" in extracted_error:
             tip = "Install browser support locally with .\\scripts\\install-browser.ps1, then retry."
         elif not ok and extracted_error and "code: not found" in extracted_error:
@@ -623,6 +692,11 @@ class Orchestrator:
         lines = [f"{status} — `{tool_name}` on `{target}`"]
         if summary:
             lines.append(summary)
+        if data.get("next_action"):
+            lines.append(f"Next: {data.get('next_action')}")
+        if isinstance(data.get("manual_steps"), list) and data.get("manual_steps"):
+            lines.append("Manual steps:")
+            lines.extend(f"- {step}" for step in data.get("manual_steps", [])[:6])
         if tip:
             lines.append(f"Tip: {tip}")
         lines.append("Details:")

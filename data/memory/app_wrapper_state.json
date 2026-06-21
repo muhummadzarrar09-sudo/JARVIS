@@ -1,29 +1,29 @@
 {
   "wrappers": {
     "explorer": {
-      "last_recipe": "project.starter",
+      "last_recipe": "project.inspect",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": false,
-      "updated_at": "2026-06-21T03:09:38.066668+00:00",
+      "last_result_ok": true,
+      "updated_at": "2026-06-21T13:34:50.142510+00:00",
       "last_action": "ensure",
       "last_focus_exact": false
     },
     "vscode": {
-      "last_recipe": "project.starter",
+      "last_recipe": "coding.start",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": false,
-      "updated_at": "2026-06-21T03:09:38.067142+00:00",
-      "last_action": "focus",
+      "last_result_ok": true,
+      "updated_at": "2026-06-21T14:01:20.604386+00:00",
+      "last_action": "ensure",
       "last_focus_exact": false
     },
     "terminal": {
-      "last_recipe": "project.starter",
+      "last_recipe": "coding.start",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": false,
-      "updated_at": "2026-06-21T03:09:38.067569+00:00",
+      "last_result_ok": true,
+      "updated_at": "2026-06-21T14:01:20.604560+00:00",
       "last_action": "ensure",
       "last_focus_exact": false,
       "last_command": "python --version"
@@ -32,9 +32,9 @@
       "last_action": "ensure",
       "last_target": "https://duckduckgo.com/?q=local+ai+agents",
       "last_url": "https://duckduckgo.com/?q=local+ai+agents",
-      "last_result_ok": false,
-      "updated_at": "2026-06-21T01:15:32.800733+00:00",
-      "last_recipe": "browser.search",
+      "last_result_ok": true,
+      "updated_at": "2026-06-21T14:01:20.597137+00:00",
+      "last_recipe": "browser.snapshot",
       "last_query": "local ai agents"
     }
   }

@@ -15,6 +15,11 @@ def next_steps() -> dict:
     return quick_actions_service.next_steps()
 
 
+@router.get("/today")
+def today() -> dict:
+    return quick_actions_service.today_brief()
+
+
 @router.get("/search")
 def search(query: str = Query(..., min_length=1)) -> dict:
     return quick_actions_service.search(query)

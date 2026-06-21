@@ -44,6 +44,8 @@ Implemented now in the terminal:
 - tasks panel and recent sessions panel
 - high-risk approval prompts in the terminal loop
 - session switching helpers and beginner command search
+- friendlier natural task/session phrases for non-technical use
+- `/do ...` shortcut for quick natural commands
 - slash commands:
   - `/starter`
   - `/next`

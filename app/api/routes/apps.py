@@ -36,6 +36,20 @@ def wrapper_status(name: str | None = Query(default=None)) -> dict:
     return result
 
 
+@router.get("/project-context")
+def project_context(target: str | None = Query(default=None)) -> dict:
+    result = app_wrapper_service.current_project_context(target)
+    audit_service.log_event("app_project_context", {"target": target, "result_ok": result.get("ok")})
+    return result
+
+
+@router.get("/doctor")
+def wrapper_doctor(name: str | None = Query(default=None)) -> dict:
+    result = app_wrapper_service.wrapper_doctor(name)
+    audit_service.log_event("app_wrapper_doctor", {"name": name, "result_ok": result.get("ok")})
+    return result
+
+
 @router.post("/action")
 def app_action(payload: AppActionRequest) -> dict:
     action = payload.action.strip().lower()
@@ -46,6 +60,10 @@ def app_action(payload: AppActionRequest) -> dict:
         result = app_wrapper_service.list_recipes()
     elif action in {"status", "state"}:
         result = app_wrapper_service.wrapper_status(payload.name)
+    elif action in {"doctor", "diagnose"}:
+        result = app_wrapper_service.wrapper_doctor(payload.name)
+    elif action in {"project", "context", "project_context"}:
+        result = app_wrapper_service.current_project_context(payload.target)
     elif action == "reset":
         result = app_wrapper_service.reset_wrapper_state(payload.name)
     elif action == "recipe":

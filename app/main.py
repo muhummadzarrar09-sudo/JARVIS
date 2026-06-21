@@ -10,6 +10,7 @@ from app.api.routes.desktop import router as desktop_router
 from app.api.routes.files import router as files_router
 from app.api.routes.health import router as health_router
 from app.api.routes.processes import router as processes_router
+from app.api.routes.quick_actions import router as quick_actions_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.tasks import router as tasks_router
 from app.api.routes.tool_registry import router as tool_registry_router
@@ -35,6 +36,7 @@ app.include_router(chat_router)
 app.include_router(tools_router)
 app.include_router(tool_registry_router)
 app.include_router(apps_router)
+app.include_router(quick_actions_router)
 app.include_router(files_router)
 app.include_router(browser_router)
 app.include_router(desktop_router)

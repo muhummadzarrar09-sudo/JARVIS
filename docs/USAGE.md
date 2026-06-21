@@ -12,6 +12,23 @@ python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 python -m app.cli repl
 ```
 
+Useful console panels:
+```text
+/starter
+/next
+/status
+/wrappers
+/recipes
+/projects
+/doctor
+/timeline
+/replay
+/palette
+/tasks
+/sessions
+/tools
+```
+
 ## CLI examples
 
 ### Normal chat
@@ -132,14 +149,42 @@ proc kill: notepad.exe
 
 ## App wrappers
 
-### List wrappers and recipes
+### Beginner-friendly natural commands
+```text
+help me start
+show my project
+what should i do next
+show my tasks
+add task finish setup
+done with task 1
+open browser
+open browser to https://example.com
+search for local ai agents
+research local ai agents
+open code here
+open files here
+open terminal here
+open readme
+resume project
+take screenshot
+write note remember this idea
+```
+
+### List wrappers, recipes, diagnostics, and project context
 ```text
 app wrappers
 app recipes
 app status
 app status: vscode
 app state: browser
+app doctor
+app doctor: browser
+app project
+app project: .
 ```
+
+### Safety / operator flow
+High-risk commands now ask for confirmation in the terminal UI. Type `YES` when prompted.
 
 ### Open, ensure, or reset higher-level wrappers
 ```text
@@ -173,6 +218,7 @@ app recipe: terminal.command ::: . || python --version
 app recipe: browser.search ::: jarvis local assistant
 app recipe: browser.research ::: local ai agents
 app recipe: browser.snapshot ::: https://example.com
+app recipe: browser.resume
 app recipe: project.inspect ::: .
 app recipe: project.starter ::: .
 app recipe: project.resume

@@ -1,29 +1,41 @@
 {
   "wrappers": {
-    "browser": {
-      "last_action": "ensure",
-      "last_target": "https://example.com",
-      "last_url": "https://example.com",
-      "last_result_ok": false,
-      "updated_at": "2026-06-20T12:35:39.321832+00:00",
-      "last_recipe": "browser.snapshot"
-    },
-    "terminal": {
-      "last_action": "ensure",
-      "last_result_ok": true,
-      "updated_at": "2026-06-20T12:35:39.307480+00:00",
-      "last_focus_exact": false,
-      "last_recipe": "project.inspect",
-      "last_command": "python --version",
-      "last_path": "/home/user/jarvis-local",
-      "last_target": "/home/user/jarvis-local"
-    },
     "explorer": {
-      "last_recipe": "project.inspect",
+      "last_recipe": "project.starter",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": true,
-      "updated_at": "2026-06-20T12:35:39.306850+00:00"
+      "last_result_ok": false,
+      "updated_at": "2026-06-21T01:39:00.476423+00:00",
+      "last_action": "ensure",
+      "last_focus_exact": false
+    },
+    "vscode": {
+      "last_recipe": "project.starter",
+      "last_path": "/home/user/jarvis-local",
+      "last_target": "/home/user/jarvis-local",
+      "last_result_ok": false,
+      "updated_at": "2026-06-21T01:39:00.476566+00:00",
+      "last_action": "focus",
+      "last_focus_exact": false
+    },
+    "terminal": {
+      "last_recipe": "project.starter",
+      "last_path": "/home/user/jarvis-local",
+      "last_target": "/home/user/jarvis-local",
+      "last_result_ok": false,
+      "updated_at": "2026-06-21T01:39:00.476708+00:00",
+      "last_action": "ensure",
+      "last_focus_exact": false,
+      "last_command": "python --version"
+    },
+    "browser": {
+      "last_action": "ensure",
+      "last_target": "https://duckduckgo.com/?q=local+ai+agents",
+      "last_url": "https://duckduckgo.com/?q=local+ai+agents",
+      "last_result_ok": false,
+      "updated_at": "2026-06-21T01:15:32.800733+00:00",
+      "last_recipe": "browser.search",
+      "last_query": "local ai agents"
     }
   }
 }

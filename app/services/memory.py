@@ -122,6 +122,26 @@ class MemoryService:
                 )
         return items
 
+    def resolve_session_id(self, partial: str) -> str | None:
+        needle = (partial or "").strip()
+        if not needle:
+            return None
+        with sqlite3.connect(self.db_path) as conn:
+            exact = conn.execute(
+                "SELECT session_id FROM sessions WHERE session_id = ?",
+                (needle,),
+            ).fetchone()
+            if exact:
+                return exact[0]
+
+            rows = conn.execute(
+                "SELECT session_id FROM sessions WHERE session_id LIKE ? ORDER BY updated_at DESC LIMIT 2",
+                (f"{needle}%",),
+            ).fetchall()
+        if len(rows) == 1:
+            return rows[0][0]
+        return None
+
     def session_overview(self, session_id: str) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
             session_row = conn.execute(

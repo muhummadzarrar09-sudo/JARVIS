@@ -58,9 +58,13 @@ This roadmap turns the vision into a build sequence with current status.
 - [x] richer app-specific workflow recipes starter
 - [x] wrapper-specific state persistence starter
 - [x] workspace-aware wrapper recipes starter
+- [x] project-context command-center panel starter
+- [x] smarter wrapper/recipe branching starter
+- [x] timeline panel starter
+- [x] operator mode starter (approvals + replay/palette)
 - [ ] exact window activation hardening beyond title matching
 - [ ] richer desktop safety/undo policies
-- [ ] smarter wrapper/recipe branching from live app state
+- [ ] deeper live branching from actual running app/browser/window state
 
 ### Phase 5 — Voice + Orb UI
 **Status:** planned
@@ -100,8 +104,11 @@ This roadmap turns the vision into a build sequence with current status.
 3. add desktop screenshots into audit/replay loop
 4. add active-window aware action guardrails
 5. expand wrapper recipes and app-specific workflows
-6. later: click coordinates / vision-assisted selection
-7. later: wrapper state persistence and smarter app agents
+6. expand project context + command-center panels
+7. add live timeline / session history visibility
+8. add operator approvals + replay surfaces
+9. later: click coordinates / vision-assisted selection
+10. later: wrapper state persistence and smarter app agents
 
 ### Step D — Add mobile/UI layer
 1. local web dashboard

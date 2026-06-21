@@ -25,9 +25,11 @@ Wrappers give JARVIS reusable app-specific entry points with cleaner commands an
 - `browser.search`
 - `browser.research`
 - `browser.snapshot`
+- `browser.resume`
 - `project.inspect`
 - `project.starter`
 - `project.resume`
+- `vscode.resume`
 
 ## Smarter wrapper behavior
 Wrappers now maintain lightweight remembered state such as:
@@ -40,13 +42,47 @@ That allows commands like `app ensure` to reuse prior targets where it makes sen
 
 ## CLI commands
 
-### List wrappers, recipes, and status
+### List wrappers, recipes, status, diagnostics, and project context
 ```text
 app wrappers
 app recipes
 app status
 app status: browser
 app state: vscode
+app doctor
+app doctor: browser
+app project
+app project: .
+app context: .
+```
+
+### Console-level visibility helpers
+```text
+/starter
+/next
+/status
+/projects
+/doctor
+/timeline
+/replay
+/palette
+/tasks
+/sessions
+```
+
+### Easy natural commands
+```text
+help me start
+show my project
+open browser
+search for local ai agents
+open code here
+open files here
+open terminal here
+open readme
+resume project
+take screenshot
+write note remember this idea
 ```
 
 ### Open / ensure / reset wrappers
@@ -84,12 +120,14 @@ app recipe: explorer.workspace ::: .
 app recipe: vscode.project ::: .
 app recipe: vscode.file ::: README.md
 app recipe: vscode.readme ::: .
+app recipe: vscode.resume
 app recipe: terminal.project ::: .
 app recipe: terminal.command ::: python -m uvicorn app.main:app --reload
 app recipe: terminal.command ::: . || python --version
 app recipe: browser.search ::: jarvis local assistant
 app recipe: browser.research ::: local ai agents
 app recipe: browser.snapshot ::: https://example.com
+app recipe: browser.resume
 app recipe: project.inspect ::: .
 app recipe: project.starter ::: .
 app recipe: project.resume
@@ -99,6 +137,11 @@ app recipe: project.resume
 - `GET /tools/apps/wrappers`
 - `GET /tools/apps/recipes`
 - `GET /tools/apps/status`
+- `GET /tools/apps/doctor`
+- `GET /tools/apps/project-context`
+- `GET /audit/timeline`
+- `GET /audit/operator-summary`
+- `GET /audit/replay`
 - `POST /tools/apps/action`
 
 ## Sequence position

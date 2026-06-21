@@ -10,7 +10,10 @@ from rich.table import Table
 from app.agents.orchestrator import orchestrator
 from app.core.config import settings
 from app.services.app_wrapper_service import app_wrapper_service
+from app.services.audit import audit_service
 from app.services.memory import memory_service
+from app.services.operator_mode import operator_mode_service
+from app.services.quick_actions_service import quick_actions_service
 from app.services.task_service import task_service
 from app.services.tool_registry import tool_registry
 
@@ -26,6 +29,18 @@ def _command_help_text() -> str:
         "  /status               show JARVIS dashboard\n"
         "  /wrappers             show wrapper status\n"
         "  /recipes              show wrapper recipes\n"
+        "  /projects             show current project context\n"
+        "  /doctor               show wrapper readiness diagnostics\n"
+        "  /timeline             show recent session/action timeline\n"
+        "  /replay               show replayable recent commands\n"
+        "  /palette              show starter command palette\n"
+        "  /starter              show beginner-friendly starter guide\n"
+        "  /next                 show suggested next actions\n"
+        "  /tasks                show open tasks\n"
+        "  /sessions             show recent sessions\n"
+        "  /use <session_id>     switch to a recent session (full or short id)\n"
+        "  /resume               switch to the most recent other session\n"
+        "  /find <text>          search beginner commands\n"
         "  /tools                show tool registry summary\n"
         "  /clear                clear terminal\n"
         "  shell: <command>      run a shell command\n"
@@ -47,6 +62,9 @@ def _command_help_text() -> str:
         "  browser screenshot: <path>\n"
         "  browser back | browser forward | browser close\n"
         "  app wrappers | app recipes | app status[: <name>] | app state[: <name>]\n"
+        "  app doctor[: <name>] | app diagnose[: <name>]\n"
+        "  app project[: <path>] | app context[: <path>]\n"
+        "  app resume recipes: vscode.resume | browser.resume | project.resume\n"
         "  app open: <name> [::: target]\n"
         "  app ensure: <name> [::: target]\n"
         "  app focus: <name> | app focusexact: <name>\n"
@@ -138,6 +156,155 @@ def _tools_table() -> Table:
     return table
 
 
+def _tasks_table(limit: int = 8) -> Table:
+    table = Table(title="Open Tasks", show_lines=False)
+    table.add_column("ID", style="yellow")
+    table.add_column("Title", style="white")
+    table.add_column("Priority", style="magenta")
+    table.add_column("Updated", style="dim")
+
+    items = task_service.list_tasks(status="open", limit=limit)
+    for item in items:
+        table.add_row(str(item.get("id", "?")), item.get("title", ""), item.get("priority", "normal"), str(item.get("updated_at", ""))[-8:])
+    if not items:
+        table.add_row("-", "No open tasks", "-", "-")
+    return table
+
+
+def _sessions_table(current_session_id: str, limit: int = 8) -> Table:
+    table = Table(title="Recent Sessions", show_lines=False)
+    table.add_column("Current")
+    table.add_column("Session", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Msgs", style="yellow")
+
+    items = memory_service.list_sessions(limit=limit)
+    for item in items:
+        table.add_row(
+            "●" if item.get("session_id") == current_session_id else "",
+            item.get("session_id", "")[:8],
+            item.get("title", ""),
+            str(item.get("message_count", 0)),
+        )
+    if not items:
+        table.add_row("", "-", "No sessions", "-")
+    return table
+
+
+def _doctor_table() -> Table:
+    table = Table(title="Wrapper Doctor", show_lines=False)
+    table.add_column("Wrapper", style="yellow")
+    table.add_column("Ready")
+    table.add_column("Binary/Context", style="magenta")
+    table.add_column("Notes", style="dim")
+
+    doctor = app_wrapper_service.wrapper_doctor()
+    items = doctor.get("items", []) if doctor.get("ok") else []
+    for item in items:
+        context = item.get("binary") or ((item.get("context") or {}).get("url") if isinstance(item.get("context"), dict) else "") or ""
+        table.add_row(
+            item.get("name", "?"),
+            "yes" if item.get("ready") else "no",
+            str(context)[:40],
+            item.get("notes", ""),
+        )
+    if not items:
+        table.add_row("(unavailable)", "-", "-", doctor.get("error", "no diagnostics"))
+    return table
+
+
+def _replay_table(session_id: str, limit: int = 10) -> Table:
+    table = Table(title="Replay Candidates", show_lines=False)
+    table.add_column("Risk", style="red")
+    table.add_column("Command", style="cyan")
+    table.add_column("Event", style="dim")
+
+    items = audit_service.replay_candidates(session_id=session_id, limit=limit)
+    for item in items:
+        table.add_row(item.get("risk", "?"), item.get("command", ""), item.get("event_type", ""))
+    if not items:
+        table.add_row("-", "No replay candidates yet", "-")
+    return table
+
+
+def _palette_panel() -> Panel:
+    palette = operator_mode_service.palette()
+    blocks = []
+    for item in palette:
+        commands = "\n".join(f"• {cmd}" for cmd in item.get("commands", []))
+        blocks.append(f"[bold]{item.get('category')}[/bold]\n{commands}")
+    return Panel.fit("\n\n".join(blocks), title="Command Palette", border_style="blue")
+
+
+def _search_panel(query: str) -> Panel:
+    results = quick_actions_service.search(query)
+    if not results.get("ok"):
+        return Panel.fit(results.get("error", "No matches"), title="Command Search", border_style="yellow")
+    if not results.get("items"):
+        return Panel.fit(f"No beginner commands matched: {query}", title="Command Search", border_style="yellow")
+    body = "\n\n".join(
+        f"[bold]{item.get('category')}[/bold]\n• {item.get('say')} — {item.get('does')}"
+        for item in results.get("items", [])[:8]
+    )
+    return Panel.fit(body, title=f"Command Search: {query}", border_style="green")
+
+
+def _next_steps_panel() -> Panel:
+    steps = quick_actions_service.next_steps().get("items", [])
+    body = "\n".join(f"• {item}" for item in steps) if steps else "No next steps available."
+    return Panel.fit(body, title="Suggested Next Actions", border_style="bright_green")
+
+
+def _starter_panel() -> Panel:
+    guide = quick_actions_service.guide()
+    blocks = []
+    for category in guide.get("categories", []):
+        items = "\n".join(
+            f"• [bold]{item.get('say')}[/bold] — {item.get('does')}"
+            for item in category.get("items", [])
+        )
+        blocks.append(f"[bold]{category.get('name')}[/bold]\n{items}")
+    return Panel.fit("\n\n".join(blocks), title=guide.get("title", "Starter Guide"), border_style="bright_green")
+
+
+def _project_context_panel() -> Panel:
+    context = app_wrapper_service.current_project_context(None)
+    if not context.get("ok"):
+        return Panel.fit(
+            context.get("error", "project context unavailable"),
+            title="Project Context",
+            border_style="yellow",
+        )
+
+    summary = context.get("summary", {})
+    project_type = ", ".join(summary.get("project_type", []))
+    markers = ", ".join(item.get("name", "") for item in summary.get("markers", [])[:6]) or "none"
+    recipes = ", ".join(context.get("recommended_recipes", [])[:5])
+    body = (
+        f"Path: {context.get('path')}\n"
+        f"Type: {project_type}\n"
+        f"Markers: {markers}\n"
+        f"README: {summary.get('readme') or 'none'}\n"
+        f"Suggested: {recipes}"
+    )
+    return Panel.fit(body, title="Project Context", border_style="green")
+
+
+def _timeline_table(session_id: str, limit: int = 12) -> Table:
+    table = Table(title="Recent Timeline", show_lines=False)
+    table.add_column("Event", style="cyan")
+    table.add_column("Preview", style="white")
+    table.add_column("At", style="dim")
+
+    for item in audit_service.timeline(session_id=session_id, limit=limit):
+        table.add_row(
+            item.get("event_type", "?"),
+            item.get("preview", "")[:80],
+            (item.get("ts") or "")[-14:-6] if item.get("ts") else "",
+        )
+    return table
+
+
 def _print_dashboard(session_id: str) -> None:
     session = memory_service.session_overview(session_id)
     open_tasks = task_service.list_tasks(status="open", limit=5)
@@ -156,17 +323,22 @@ def _print_dashboard(session_id: str) -> None:
     wrapper_items = wrappers.get("items", []) if wrappers.get("ok") else []
     running_count = sum(1 for item in wrapper_items if item.get("running"))
     active_names = [item.get("name") for item in wrapper_items if item.get("active")]
+    doctor = app_wrapper_service.wrapper_doctor()
+    ready_count = sum(1 for item in doctor.get("items", []) if item.get("ready")) if doctor.get("ok") else 0
     wrappers_panel = Panel.fit(
         f"Wrappers online: {running_count}/{len(wrapper_items)}\n"
         f"Active wrapper(s): {', '.join(active_names) if active_names else 'none'}\n"
+        f"Ready wrappers: {ready_count}/{len(doctor.get('items', [])) if doctor.get('ok') else 0}\n"
         f"Recipes: {app_wrapper_service.list_recipes().get('count', 0)}\n"
         f"Tools: {len(tool_registry.list_tools())}",
         title="Control Surface",
         border_style="magenta",
     )
 
-    console.print(Columns([session_panel, wrappers_panel], equal=True))
+    console.print(Columns([session_panel, wrappers_panel, _project_context_panel()], equal=True))
     console.print(_wrapper_status_table())
+    console.print(Columns([_tasks_table(limit=6), _sessions_table(current_session_id=session_id, limit=6)], equal=True))
+    console.print(_timeline_table(session_id=session_id, limit=8))
 
 
 def _print_banner(session_id: str) -> None:
@@ -179,7 +351,25 @@ def _print_banner(session_id: str) -> None:
         )
     )
     _print_dashboard(session_id)
-    console.print("[dim]Tip: use /status, /wrappers, /recipes, or /tools for console panels.[/dim]")
+    console.print("[dim]Tip: use /starter, /next, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /sessions, or /tools for console panels.[/dim]")
+
+
+def _approve_if_needed(user_input: str) -> bool:
+    info = operator_mode_service.classify_command(user_input)
+    if not info.get("requires_confirmation"):
+        return True
+    console.print(
+        Panel.fit(
+            f"Risk: {info.get('risk')}\n"
+            f"Label: {info.get('label')}\n"
+            f"Reason: {info.get('reason')}\n"
+            "Confirm execution? type YES to continue.",
+            title="Approval Required",
+            border_style="red",
+        )
+    )
+    response = console.input("[bold red]confirm> [/bold red]").strip()
+    return response == "YES"
 
 
 @app.command()
@@ -187,6 +377,9 @@ def chat(message: str, session_id: Optional[str] = None) -> None:
     """Send one message to JARVIS from the terminal."""
     memory_service.initialize()
     task_service.initialize()
+    if not _approve_if_needed(message):
+        console.print("[yellow]Command cancelled.[/yellow]")
+        return
     result = orchestrator.handle_chat(message=message, session_id=session_id, use_tools=True)
     console.print(Panel(result["reply"], title=f"JARVIS • session {result['session_id']}"))
     console.print(f"[dim]steps: {', '.join(result['steps'])}[/dim]")
@@ -225,12 +418,68 @@ def repl(session_id: Optional[str] = None) -> None:
         if user_input == "/recipes":
             console.print(_recipes_table())
             continue
+        if user_input == "/projects":
+            console.print(_project_context_panel())
+            continue
+        if user_input == "/doctor":
+            console.print(_doctor_table())
+            continue
+        if user_input == "/timeline":
+            console.print(_timeline_table(session_id=sid, limit=20))
+            continue
+        if user_input == "/replay":
+            console.print(_replay_table(session_id=sid, limit=12))
+            continue
+        if user_input == "/palette":
+            console.print(_palette_panel())
+            continue
+        if user_input == "/starter":
+            console.print(_starter_panel())
+            continue
+        if user_input == "/next":
+            console.print(_next_steps_panel())
+            continue
+        if user_input == "/tasks":
+            console.print(_tasks_table(limit=12))
+            continue
+        if user_input == "/sessions":
+            console.print(_sessions_table(current_session_id=sid, limit=12))
+            continue
+        if user_input == "/resume":
+            sessions = memory_service.list_sessions(limit=3)
+            target = next((item.get("session_id") for item in sessions if item.get("session_id") != sid), None)
+            if target:
+                sid = target
+                console.print(f"[green]Resumed recent session {sid}[/green]")
+                console.print(_project_context_panel())
+            else:
+                console.print("[yellow]No other recent session to resume.[/yellow]")
+            continue
+        if user_input.startswith("/use "):
+            candidate = user_input[5:].strip()
+            resolved = memory_service.resolve_session_id(candidate)
+            overview = memory_service.session_overview(resolved) if resolved else {"ok": False}
+            if overview.get("ok"):
+                sid = resolved
+                console.print(f"[green]Switched to session {sid}[/green]")
+                console.print(_project_context_panel())
+            else:
+                console.print(f"[yellow]Session not found: {candidate}[/yellow]")
+            continue
+        if user_input.startswith("/find "):
+            query = user_input[6:].strip()
+            console.print(_search_panel(query))
+            continue
         if user_input == "/tools":
             console.print(_tools_table())
             continue
         if user_input == "/clear":
             console.clear()
             _print_banner(sid)
+            continue
+
+        if not _approve_if_needed(user_input):
+            console.print("[yellow]Command cancelled.[/yellow]")
             continue
 
         result = orchestrator.handle_chat(message=user_input, session_id=sid, use_tools=True)

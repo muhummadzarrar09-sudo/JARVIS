@@ -9,6 +9,7 @@ from app.services.file_tool import file_tool
 from app.services.llm_router import llm_router
 from app.services.memory import memory_service
 from app.services.process_tool import process_tool
+from app.services.quick_actions_service import quick_actions_service
 from app.services.shell_tool import shell_tool
 from app.services.task_service import task_service
 
@@ -61,9 +62,106 @@ class Orchestrator:
             return [part.strip() for part in raw.split("+") if part.strip()]
         return [part.strip() for part in raw.split() if part.strip()]
 
+    def _handle_easy_command(self, normalized: str, lowered: str) -> tuple[str | None, str | None, dict | None]:
+        if lowered in {"what can you do", "show examples", "starter commands", "help me start", "help me", "show starter guide"}:
+            return "quick_guide", "guide", quick_actions_service.guide()
+
+        if lowered in {"what should i do next", "what next", "show next steps"}:
+            return "quick_next_steps", "guide", quick_actions_service.next_steps()
+
+        if lowered in {"show my tasks", "show tasks", "what are my tasks", "what am i working on"}:
+            return "task_list_open", "open", {"ok": True, "items": task_service.list_tasks(status="open", limit=20)}
+
+        if lowered.startswith("add task ") or lowered.startswith("create task "):
+            prefix = "add task " if lowered.startswith("add task ") else "create task "
+            title = normalized[len(prefix):].strip()
+            return "task_create", title, task_service.create_task(title=title, session_id=None)
+
+        if lowered.startswith("done with task "):
+            raw_id = normalized[len("done with task "):].strip()
+            if raw_id.isdigit():
+                return "task_done", raw_id, task_service.update_status(int(raw_id), "done")
+
+        if lowered.startswith("reopen task "):
+            raw_id = normalized[len("reopen task "):].strip()
+            if raw_id.isdigit():
+                return "task_reopen", raw_id, task_service.update_status(int(raw_id), "open")
+
+        if lowered in {"show wrapper status", "show wrappers", "wrapper status"}:
+            return "app_status", "apps", app_wrapper_service.wrapper_status(None)
+
+        if lowered in {"check my setup", "check setup", "run doctor", "show doctor"}:
+            return "app_doctor", "apps", app_wrapper_service.wrapper_doctor(None)
+
+        if lowered in {"show my project", "project info", "what project is this", "inspect project"}:
+            return "app_project_context", "project", app_wrapper_service.current_project_context(None)
+
+        if lowered in {"open browser", "start browser"}:
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target="https://example.com")
+
+        if lowered.startswith("open browser to "):
+            target = normalized[len("open browser to "):].strip()
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target)
+
+        if lowered.startswith("browse to "):
+            target = normalized[len("browse to "):].strip()
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target)
+
+        if lowered.startswith("search for "):
+            query = normalized[len("search for "):].strip()
+            return "app_recipe", "browser.search", app_wrapper_service.run_recipe("browser.search", text=query)
+
+        if lowered.startswith("research "):
+            query = normalized[len("research "):].strip()
+            return "app_recipe", "browser.research", app_wrapper_service.run_recipe("browser.research", text=query)
+
+        if lowered in {"open code", "open vscode", "open code here", "open this folder in code"}:
+            return "app_ensure", "vscode", app_wrapper_service.ensure_app("vscode", target=".")
+
+        if lowered.startswith("open code in "):
+            target = normalized[len("open code in "):].strip()
+            return "app_ensure", "vscode", app_wrapper_service.ensure_app("vscode", target=target)
+
+        if lowered in {"open files", "open file explorer", "open files here", "open explorer"}:
+            return "app_ensure", "explorer", app_wrapper_service.ensure_app("explorer", target=".")
+
+        if lowered.startswith("open files in "):
+            target = normalized[len("open files in "):].strip()
+            return "app_ensure", "explorer", app_wrapper_service.ensure_app("explorer", target=target)
+
+        if lowered in {"open terminal", "open terminal here", "start terminal"}:
+            return "app_ensure", "terminal", app_wrapper_service.ensure_app("terminal", target=".")
+
+        if lowered.startswith("open terminal in "):
+            target = normalized[len("open terminal in "):].strip()
+            return "app_ensure", "terminal", app_wrapper_service.ensure_app("terminal", target=target)
+
+        if lowered in {"resume project", "resume my project"}:
+            return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
+
+        if lowered in {"open readme", "show readme", "open readme in code"}:
+            return "app_recipe", "vscode.readme", app_wrapper_service.run_recipe("vscode.readme", target=".")
+
+        if lowered in {"take screenshot", "screenshot", "capture screenshot"}:
+            return "desktop_screenshot", "auto", desktop_tool.screenshot(None)
+
+        if lowered.startswith("write note "):
+            text = normalized[len("write note "):].strip()
+            return "app_note", "notepad", app_wrapper_service.quick_note(text)
+
+        if lowered.startswith("remember this "):
+            text = normalized[len("remember this "):].strip()
+            return "app_note", "notepad", app_wrapper_service.quick_note(text)
+
+        return None, None, None
+
     def _handle_prefixed_tool(self, message: str, session_id: str) -> tuple[str | None, str | None, dict | None]:
         normalized = message.strip()
         lowered = normalized.lower()
+
+        easy_tool_name, easy_target, easy_result = self._handle_easy_command(normalized, lowered)
+        if easy_tool_name:
+            return easy_tool_name, easy_target, easy_result
 
         if lowered.startswith("shell:"):
             command = normalized.split(":", 1)[1].strip()
@@ -192,10 +290,28 @@ class Orchestrator:
             result = app_wrapper_service.wrapper_status(None)
             return "app_status", "apps", result
 
+        if lowered in {"app doctor", "app diagnose"}:
+            result = app_wrapper_service.wrapper_doctor(None)
+            return "app_doctor", "apps", result
+
+        if lowered in {"app project", "app context"}:
+            result = app_wrapper_service.current_project_context(None)
+            return "app_project_context", "project", result
+
         raw_app_status = self._tail_after_prefixes(normalized, lowered, ["app status:", "app status ", "app state:", "app state "])
         if raw_app_status is not None:
             result = app_wrapper_service.wrapper_status(raw_app_status.strip())
             return "app_status", raw_app_status.strip(), result
+
+        raw_app_doctor = self._tail_after_prefixes(normalized, lowered, ["app doctor:", "app doctor ", "app diagnose:", "app diagnose "])
+        if raw_app_doctor is not None:
+            result = app_wrapper_service.wrapper_doctor(raw_app_doctor.strip())
+            return "app_doctor", raw_app_doctor.strip(), result
+
+        raw_app_project = self._tail_after_prefixes(normalized, lowered, ["app project:", "app project ", "app context:", "app context "])
+        if raw_app_project is not None:
+            result = app_wrapper_service.current_project_context(raw_app_project.strip())
+            return "app_project_context", raw_app_project.strip(), result
 
         if lowered == "app reset":
             result = app_wrapper_service.reset_wrapper_state(None)
@@ -407,8 +523,48 @@ class Orchestrator:
         return None, None, None
 
     def _format_tool_reply(self, tool_name: str, target: str | None, result: dict | None) -> str:
-        pretty = json.dumps(result or {}, indent=2, ensure_ascii=False)
-        return f"Tool `{tool_name}` executed on `{target}`.\nResult:\n{pretty}"
+        data = result or {}
+        ok = data.get("ok")
+        status = "✅ Success" if ok else ("⚠ Partial" if ok is None else "❌ Could not complete")
+
+        summary = None
+        if tool_name in {"task_create", "task_done", "task_reopen"}:
+            if data.get("title"):
+                summary = f"Task: {data.get('title')}"
+            elif isinstance(data.get('items'), list):
+                summary = f"Found {len(data.get('items', []))} task item(s)."
+        elif tool_name.startswith("app_") and data.get("wrapper"):
+            summary = f"Wrapper: {data.get('wrapper')}"
+        elif tool_name == "app_project_context" and data.get("path"):
+            summary = f"Project path: {data.get('path')}"
+        elif tool_name.startswith("browser_") and data.get("url"):
+            summary = f"Browser URL: {data.get('url')}"
+        elif tool_name.startswith("desktop_") and data.get("path"):
+            summary = f"Saved artifact: {data.get('path')}"
+        elif data.get("error"):
+            summary = data.get("error")
+
+        tip = None
+        if tool_name == "app_doctor":
+            tip = "Use this to see what is ready on your machine before trying wrapper recipes."
+        elif tool_name == "app_project_context":
+            tip = "Try: open readme, open code here, open terminal here, or resume project."
+        elif tool_name == "task_list_open":
+            tip = "You can say: add task ..., done with task 1, or reopen task 1."
+        elif not ok and tool_name.startswith("app_recipe"):
+            tip = "If this is a Windows app or browser flow, retry it on your local machine where the actual app exists."
+        elif not ok and tool_name.startswith("app_ensure"):
+            tip = "Run app doctor to check whether the wrapper has what it needs."
+
+        pretty = json.dumps(data, indent=2, ensure_ascii=False)
+        lines = [f"{status} — `{tool_name}` on `{target}`"]
+        if summary:
+            lines.append(summary)
+        if tip:
+            lines.append(f"Tip: {tip}")
+        lines.append("Details:")
+        lines.append(pretty)
+        return "\n".join(lines)
 
     def handle_chat(self, message: str, session_id: str | None, use_tools: bool = True) -> dict:
         sid = memory_service.ensure_session(session_id)

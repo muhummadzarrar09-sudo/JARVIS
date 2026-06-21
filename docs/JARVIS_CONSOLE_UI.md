@@ -33,22 +33,40 @@ Instead of copying Claude Code exactly, the JARVIS console should add:
 Implemented now in the terminal:
 - JARVIS console banner
 - dashboard panels at startup
+- beginner starter panel
+- suggested next-actions panel
 - wrapper status panel with remembered targets
+- project context panel
+- wrapper doctor panel
+- timeline panel for recent session actions
+- replay panel for recent replayable commands
+- palette panel for starter commands
+- tasks panel and recent sessions panel
+- high-risk approval prompts in the terminal loop
 - slash commands:
+  - `/starter`
+  - `/next`
   - `/status`
   - `/wrappers`
   - `/recipes`
+  - `/projects`
+  - `/doctor`
+  - `/timeline`
+  - `/replay`
+  - `/palette`
+  - `/tasks`
+  - `/sessions`
   - `/tools`
   - `/clear`
 - `jarvis>` prompt
 
 ## Future console evolution
-1. action timeline panel
-2. live task panel
-3. active browser/desktop state ribbon
-4. approval prompts for risky actions
-5. richer diff/view panels for file changes
-6. command palette / fuzzy launcher
+1. live task panel with inline state changes
+2. active browser/desktop state ribbon
+3. richer diff/view panels for file changes
+4. fuzzy launcher / command search
+5. streaming response / live step rendering
+6. multi-pane command center desktop shell
 
 ## Relationship to the desktop app
 The terminal console is not throwaway.

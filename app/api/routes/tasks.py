@@ -37,6 +37,17 @@ def create_task(payload: TaskCreateRequest) -> dict:
     return result
 
 
+@router.get("/next")
+def next_task() -> dict:
+    result = task_service.next_task()
+    return result
+
+
+@router.get("/summary")
+def task_summary() -> dict:
+    return task_service.task_summary()
+
+
 @router.post("/status")
 def update_task_status(payload: TaskStatusRequest) -> dict:
     result = task_service.update_status(payload.task_id, payload.status)

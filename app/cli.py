@@ -157,15 +157,18 @@ def _tools_table() -> Table:
 
 
 def _tasks_table(limit: int = 8) -> Table:
-    table = Table(title="Open Tasks", show_lines=False)
+    table = Table(title="Open / In-Progress Tasks", show_lines=False)
     table.add_column("ID", style="yellow")
     table.add_column("Title", style="white")
     table.add_column("Priority", style="magenta")
     table.add_column("Updated", style="dim")
 
-    items = task_service.list_tasks(status="open", limit=limit)
+    items = [item for item in task_service.list_tasks(status=None, limit=limit * 2) if item.get('status') in {'open', 'in_progress'}][:limit]
     for item in items:
-        table.add_row(str(item.get("id", "?")), item.get("title", ""), item.get("priority", "normal"), str(item.get("updated_at", ""))[-8:])
+        label = item.get("title", "")
+        if item.get("status") == "in_progress":
+            label = f"▶ {label}"
+        table.add_row(str(item.get("id", "?")), label, item.get("priority", "normal"), str(item.get("updated_at", ""))[-8:])
     if not items:
         table.add_row("-", "No open tasks", "-", "-")
     return table
@@ -173,21 +176,26 @@ def _tasks_table(limit: int = 8) -> Table:
 
 def _sessions_table(current_session_id: str, limit: int = 8) -> Table:
     table = Table(title="Recent Sessions", show_lines=False)
+    table.add_column("#", style="yellow")
     table.add_column("Current")
     table.add_column("Session", style="cyan")
     table.add_column("Title", style="white")
     table.add_column("Msgs", style="yellow")
+    table.add_column("Use", style="dim")
 
     items = memory_service.list_sessions(limit=limit)
-    for item in items:
+    for idx, item in enumerate(items, start=1):
+        short_id = item.get("session_id", "")[:8]
         table.add_row(
+            str(idx),
             "●" if item.get("session_id") == current_session_id else "",
-            item.get("session_id", "")[:8],
+            short_id,
             item.get("title", ""),
             str(item.get("message_count", 0)),
+            f"/use {idx} or /use {short_id}",
         )
     if not items:
-        table.add_row("", "-", "No sessions", "-")
+        table.add_row("-", "", "-", "No sessions", "-", "-")
     return table
 
 
@@ -457,7 +465,14 @@ def repl(session_id: Optional[str] = None) -> None:
             continue
         if user_input.startswith("/use "):
             candidate = user_input[5:].strip()
-            resolved = memory_service.resolve_session_id(candidate)
+            resolved = None
+            if candidate.isdigit():
+                index = int(candidate)
+                sessions = memory_service.list_sessions(limit=20)
+                if 1 <= index <= len(sessions):
+                    resolved = sessions[index - 1].get("session_id")
+            else:
+                resolved = memory_service.resolve_session_id(candidate)
             overview = memory_service.session_overview(resolved) if resolved else {"ok": False}
             if overview.get("ok"):
                 sid = resolved

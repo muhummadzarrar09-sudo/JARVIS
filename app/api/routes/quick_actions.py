@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.services.quick_actions_service import quick_actions_service
 
@@ -13,3 +13,8 @@ def guide() -> dict:
 @router.get("/next")
 def next_steps() -> dict:
     return quick_actions_service.next_steps()
+
+
+@router.get("/search")
+def search(query: str = Query(..., min_length=1)) -> dict:
+    return quick_actions_service.search(query)

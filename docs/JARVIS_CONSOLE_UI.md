@@ -43,6 +43,7 @@ Implemented now in the terminal:
 - palette panel for starter commands
 - tasks panel and recent sessions panel
 - high-risk approval prompts in the terminal loop
+- session switching helpers and beginner command search
 - slash commands:
   - `/starter`
   - `/next`

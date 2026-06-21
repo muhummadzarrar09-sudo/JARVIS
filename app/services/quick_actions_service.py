@@ -2,6 +2,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from app.services.app_wrapper_service import app_wrapper_service
+from app.services.task_service import task_service
 
 
 class QuickActionsService:
@@ -16,6 +17,30 @@ class QuickActionsService:
                         {"say": "show my project", "does": "Inspect the current workspace and show project context."},
                         {"say": "resume project", "does": "Reopen the remembered project flow using wrappers."},
                         {"say": "open readme", "does": "Open the README in VS Code if one exists."},
+                    ],
+                },
+                {
+                    "name": "Do this for me",
+                    "items": [
+                        {"say": "set me up to work on this project", "does": "Open project tools like code, files, and terminal."},
+                        {"say": "help me continue where I left off", "does": "Resume the remembered project flow."},
+                        {"say": "show me what to do next", "does": "Suggest the next beginner-friendly actions."},
+                    ],
+                },
+                {
+                    "name": "Tasks",
+                    "items": [
+                        {"say": "show my tasks", "does": "Show open tasks."},
+                        {"say": "what task should i do next", "does": "Pick the next task to focus on."},
+                        {"say": "work on next task", "does": "Mark the next task as in progress."},
+                        {"say": "complete next task", "does": "Mark the next task as done."},
+                    ],
+                },
+                {
+                    "name": "Sessions",
+                    "items": [
+                        {"say": "show my sessions", "does": "Show recent sessions."},
+                        {"say": "resume last session", "does": "Switch back to your recent session in the terminal."},
                     ],
                 },
                 {
@@ -49,6 +74,7 @@ class QuickActionsService:
 
     def next_steps(self) -> dict[str, Any]:
         project = app_wrapper_service.current_project_context(None)
+        task = task_service.next_task()
         suggestions = [
             "show my project",
             "open readme",
@@ -61,7 +87,13 @@ class QuickActionsService:
             suggestions = ["show my project", "resume project", "open code here", "open terminal here"]
             if summary.get("readme"):
                 suggestions.insert(1, "open readme")
-        return {"ok": True, "items": suggestions[:5]}
+        if task.get("ok") and task.get("title"):
+            suggestions.insert(0, "work on next task")
+        deduped = []
+        for item in suggestions:
+            if item not in deduped:
+                deduped.append(item)
+        return {"ok": True, "items": deduped[:5]}
 
     def search(self, query: str) -> dict[str, Any]:
         q = query.strip().lower()

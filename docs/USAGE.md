@@ -155,8 +155,11 @@ help me start
 show my project
 what should i do next
 show my tasks
+what task should i do next
+work on next task
 add task finish setup
 done with task 1
+show my sessions
 open browser
 open browser to https://example.com
 search for local ai agents

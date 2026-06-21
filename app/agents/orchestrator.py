@@ -66,11 +66,23 @@ class Orchestrator:
         if lowered in {"what can you do", "show examples", "starter commands", "help me start", "help me", "show starter guide"}:
             return "quick_guide", "guide", quick_actions_service.guide()
 
-        if lowered in {"what should i do next", "what next", "show next steps"}:
+        if lowered in {"what should i do next", "what next", "show next steps", "show me what to do next"}:
             return "quick_next_steps", "guide", quick_actions_service.next_steps()
 
-        if lowered in {"show my tasks", "show tasks", "what are my tasks", "what am i working on"}:
+        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work"}:
+            return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
+
+        if lowered in {"set me up to work on this project", "set up my project", "open my project tools"}:
+            return "app_recipe", "project.starter", app_wrapper_service.run_recipe("project.starter", target=".")
+
+        if lowered in {"show my tasks", "show tasks", "what are my tasks", "what am i working on", "open my tasks"}:
             return "task_list_open", "open", {"ok": True, "items": task_service.list_tasks(status="open", limit=20)}
+
+        if lowered in {"show my sessions", "recent sessions", "show recent sessions"}:
+            return "session_list", "recent", {"ok": True, "items": memory_service.list_sessions(limit=10)}
+
+        if lowered in {"what task should i do next", "next task", "focus me on the next task"}:
+            return "task_next", "next", task_service.next_task()
 
         if lowered.startswith("add task ") or lowered.startswith("create task "):
             prefix = "add task " if lowered.startswith("add task ") else "create task "
@@ -81,6 +93,29 @@ class Orchestrator:
             raw_id = normalized[len("done with task "):].strip()
             if raw_id.isdigit():
                 return "task_done", raw_id, task_service.update_status(int(raw_id), "done")
+
+        if lowered in {"work on next task", "start next task", "begin next task"}:
+            next_task = task_service.next_task()
+            if next_task.get("ok") and next_task.get("id"):
+                return "task_in_progress", str(next_task.get("id")), task_service.update_status(int(next_task.get("id")), "in_progress")
+            return "task_next", "next", next_task
+
+        if lowered in {"complete next task", "mark next task done", "finish next task"}:
+            next_task = task_service.next_task()
+            if next_task.get("ok") and next_task.get("id"):
+                return "task_done", str(next_task.get("id")), task_service.update_status(int(next_task.get("id")), "done")
+            return "task_next", "next", next_task
+
+        if lowered.startswith("focus on task ") or lowered.startswith("start task "):
+            prefix = "focus on task " if lowered.startswith("focus on task ") else "start task "
+            raw_id = normalized[len(prefix):].strip()
+            if raw_id.isdigit():
+                return "task_in_progress", raw_id, task_service.update_status(int(raw_id), "in_progress")
+
+        if lowered.startswith("pause task "):
+            raw_id = normalized[len("pause task "):].strip()
+            if raw_id.isdigit():
+                return "task_reopen", raw_id, task_service.update_status(int(raw_id), "open")
 
         if lowered.startswith("reopen task "):
             raw_id = normalized[len("reopen task "):].strip()
@@ -522,17 +557,34 @@ class Orchestrator:
 
         return None, None, None
 
+    def _extract_error(self, data: dict | list | None) -> str | None:
+        if isinstance(data, dict):
+            if isinstance(data.get("error"), str) and data.get("error"):
+                return data.get("error")
+            for value in data.values():
+                err = self._extract_error(value)
+                if err:
+                    return err
+        elif isinstance(data, list):
+            for item in data:
+                err = self._extract_error(item)
+                if err:
+                    return err
+        return None
+
     def _format_tool_reply(self, tool_name: str, target: str | None, result: dict | None) -> str:
         data = result or {}
         ok = data.get("ok")
         status = "✅ Success" if ok else ("⚠ Partial" if ok is None else "❌ Could not complete")
 
         summary = None
-        if tool_name in {"task_create", "task_done", "task_reopen"}:
+        if tool_name in {"task_create", "task_done", "task_reopen", "task_in_progress", "task_next"}:
             if data.get("title"):
                 summary = f"Task: {data.get('title')}"
             elif isinstance(data.get('items'), list):
                 summary = f"Found {len(data.get('items', []))} task item(s)."
+        elif tool_name == "session_list" and isinstance(data.get('items'), list):
+            summary = f"Found {len(data.get('items', []))} recent session(s)."
         elif tool_name.startswith("app_") and data.get("wrapper"):
             summary = f"Wrapper: {data.get('wrapper')}"
         elif tool_name == "app_project_context" and data.get("path"):
@@ -541,16 +593,27 @@ class Orchestrator:
             summary = f"Browser URL: {data.get('url')}"
         elif tool_name.startswith("desktop_") and data.get("path"):
             summary = f"Saved artifact: {data.get('path')}"
-        elif data.get("error"):
-            summary = data.get("error")
+        else:
+            extracted_error = self._extract_error(data)
+            if extracted_error:
+                summary = extracted_error
 
         tip = None
+        extracted_error = self._extract_error(data)
         if tool_name == "app_doctor":
             tip = "Use this to see what is ready on your machine before trying wrapper recipes."
         elif tool_name == "app_project_context":
             tip = "Try: open readme, open code here, open terminal here, or resume project."
-        elif tool_name == "task_list_open":
-            tip = "You can say: add task ..., done with task 1, or reopen task 1."
+        elif tool_name == "session_list":
+            tip = "In the terminal, use /sessions and then /use 1 or /resume to switch sessions."
+        elif tool_name in {"task_list_open", "task_next", "task_in_progress"}:
+            tip = "You can say: add task ..., focus on task 2, done with task 2, or reopen task 2."
+        elif not ok and extracted_error and "Playwright is not installed" in extracted_error:
+            tip = "Install browser support locally with .\\scripts\\install-browser.ps1, then retry."
+        elif not ok and extracted_error and "code: not found" in extracted_error:
+            tip = "VS Code command line launcher is missing on this machine. Make sure `code` is on PATH."
+        elif not ok and extracted_error and ("start powershell" in extracted_error or "PowerShell" in extracted_error):
+            tip = "This terminal wrapper expects PowerShell on Windows. Retry on your real laptop environment."
         elif not ok and tool_name.startswith("app_recipe"):
             tip = "If this is a Windows app or browser flow, retry it on your local machine where the actual app exists."
         elif not ok and tool_name.startswith("app_ensure"):

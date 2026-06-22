@@ -5,37 +5,39 @@
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
       "last_result_ok": true,
-      "updated_at": "2026-06-21T13:34:50.142510+00:00",
+      "updated_at": "2026-06-22T03:18:42.179977+00:00",
       "last_action": "ensure",
       "last_focus_exact": false
     },
     "vscode": {
-      "last_recipe": "coding.start",
+      "last_recipe": "coding.resume",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": true,
-      "updated_at": "2026-06-21T14:01:20.604386+00:00",
+      "last_result_ok": false,
+      "updated_at": "2026-06-22T03:18:42.170490+00:00",
       "last_action": "ensure",
       "last_focus_exact": false
     },
     "terminal": {
-      "last_recipe": "coding.start",
+      "last_recipe": "coding.resume",
       "last_path": "/home/user/jarvis-local",
       "last_target": "/home/user/jarvis-local",
-      "last_result_ok": true,
-      "updated_at": "2026-06-21T14:01:20.604560+00:00",
+      "last_result_ok": false,
+      "updated_at": "2026-06-22T03:18:42.170735+00:00",
       "last_action": "ensure",
       "last_focus_exact": false,
       "last_command": "python --version"
     },
     "browser": {
       "last_action": "ensure",
-      "last_target": "https://duckduckgo.com/?q=local+ai+agents",
-      "last_url": "https://duckduckgo.com/?q=local+ai+agents",
+      "last_target": "https://duckduckgo.com/?q=site%3Aexample.com+pricing",
+      "last_url": "https://duckduckgo.com/?q=site%3Aexample.com+pricing",
       "last_result_ok": true,
-      "updated_at": "2026-06-21T14:01:20.597137+00:00",
+      "updated_at": "2026-06-22T03:18:42.202025+00:00",
       "last_recipe": "browser.snapshot",
-      "last_query": "local ai agents"
+      "last_query": "site:example.com pricing",
+      "last_browser_name": "chrome",
+      "preferred_browser": "chrome"
     }
   }
 }

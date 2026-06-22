@@ -2,7 +2,7 @@ from pathlib import Path
 import shutil
 import importlib.util
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urlparse
 
 from app.core.config import settings
 from app.services.browser_tool import browser_tool
@@ -113,6 +113,12 @@ class AppWrapperService:
                 "risk": "medium",
                 "notes": "Run a browser search using a direct DuckDuckGo results URL.",
             },
+            "browser.site_search": {
+                "aliases": ["web.site_search", "site.search"],
+                "inputs": ["query"],
+                "risk": "medium",
+                "notes": "Search only within the currently remembered or active site.",
+            },
             "browser.research": {
                 "aliases": ["research", "web.research"],
                 "inputs": ["query"],
@@ -148,6 +154,24 @@ class AppWrapperService:
                 "inputs": ["path?"],
                 "risk": "high",
                 "notes": "Get ready to code by opening the project in code and terminal flows.",
+            },
+            "coding.resume": {
+                "aliases": ["resumecoding", "continuecoding"],
+                "inputs": ["path?"],
+                "risk": "high",
+                "notes": "Resume the last coding workspace using remembered project and code state.",
+            },
+            "project.files": {
+                "aliases": ["workspace.files", "showfiles"],
+                "inputs": ["path?"],
+                "risk": "low",
+                "notes": "Open or preview the current project folder contents.",
+            },
+            "browser.page_review": {
+                "aliases": ["page.review", "reviewpage"],
+                "inputs": ["url?"],
+                "risk": "medium",
+                "notes": "Review the current or remembered browser page with title/text context.",
             },
             "project.starter": {
                 "aliases": ["workspace.start", "project.start"],
@@ -239,6 +263,16 @@ class AppWrapperService:
             return str(resolved)
         except Exception:
             return candidate
+
+    def _preferred_browser_name(self, explicit: str | None = None) -> str | None:
+        cleaned = (explicit or "").strip().lower()
+        if cleaned:
+            return cleaned
+        state = wrapper_state_service.get_state("browser")
+        preferred = state.get("preferred_browser") or state.get("last_browser_name")
+        if isinstance(preferred, str) and preferred.strip():
+            return preferred.strip().lower()
+        return None
 
     def _steps_ok(self, steps: list[dict[str, Any]]) -> bool:
         return all(step.get("result", {}).get("ok") for step in steps)
@@ -346,6 +380,18 @@ class AppWrapperService:
             return path, command
         return None, raw
 
+    def _domain_from_url(self, url: str | None) -> str | None:
+        if not url:
+            return None
+        try:
+            parsed = urlparse(url)
+            host = (parsed.netloc or "").strip().lower()
+            if host.startswith("www."):
+                host = host[4:]
+            return host or None
+        except Exception:
+            return None
+
     def _readme_fallback(self, readme_path: str, summary: dict[str, Any], reason: str) -> dict[str, Any]:
         workspace_root = str(self._workspace_root())
         try:
@@ -376,16 +422,24 @@ class AppWrapperService:
             "listing": listing,
         }
 
-    def _browser_link_fallback(self, url: str, reason: str, query: str | None = None) -> dict[str, Any]:
+    def _browser_link_fallback(self, url: str, reason: str, query: str | None = None, browser_name: str | None = None) -> dict[str, Any]:
+        preferred = (browser_name or "").strip().lower()
+        browser_label = {
+            "chrome": "Chrome",
+            "msedge": "Edge",
+            "brave": "Brave",
+            "firefox": "Firefox",
+        }.get(preferred, "a browser")
         return {
             "ok": True,
             "fallback": "browser_link",
             "reason": reason,
-            "plain_english": "JARVIS could not control the browser here, so it prepared a link you can open manually.",
+            "plain_english": f"JARVIS could not control {browser_label} here, so it prepared a link you can open manually.",
             "url": url,
             "query": query,
+            "browser_name": preferred or None,
             "manual_steps": [
-                "Open any browser on your computer.",
+                f"Open {browser_label} on your computer." if preferred else "Open any browser on your computer.",
                 f"Paste this URL: {url}",
             ],
             "next_action": f"Open this link manually: {url}",
@@ -443,6 +497,10 @@ class AppWrapperService:
     def current_browser_context(self) -> dict[str, Any]:
         state = browser_tool.state()
         remembered = wrapper_state_service.get_state("browser")
+        available = browser_tool.available_browsers()
+        preference = available.get("preference", []) if available.get("ok") else []
+        candidates = available.get("items", []) if available.get("ok") else []
+        preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name")
         if not state.get("ok"):
             return state
         if not state.get("started"):
@@ -454,6 +512,9 @@ class AppWrapperService:
                 "title": None,
                 "text": None,
                 "remembered_url": remembered_url,
+                "preferred_browser": preferred_browser,
+                "preference": preference,
+                "available_browsers": candidates,
                 "plain_english": "No live browser session is running right now." if not remembered_url else "No live browser session is open, but JARVIS remembers your last page.",
                 "next_action": "Say: open browser" if not remembered_url else "Say: show me the current page or resume browser",
             }
@@ -467,6 +528,43 @@ class AppWrapperService:
             "text": text.get("text"),
             "text_truncated": text.get("truncated"),
             "remembered_url": remembered.get("last_url") or remembered.get("last_target"),
+            "preferred_browser": preferred_browser,
+            "preference": preference,
+            "available_browsers": candidates,
+            "plain_english": "A browser session is currently available." if (title.get("ok") and text.get("ok")) else "A browser session is running, but some page details were unavailable.",
+            "next_action": "Say: show me the current page, search for something, or browser text",
+        }
+
+    def set_browser_preference(self, browser_name: str | None) -> dict[str, Any]:
+        raw = (browser_name or "").strip().lower()
+        if raw in {"", "auto", "default", "system"}:
+            state = self._remember_wrapper("browser", preferred_browser="")
+            return {
+                "ok": True,
+                "preferred_browser": None,
+                "plain_english": "JARVIS will now use the normal browser preference order.",
+                "next_action": "Try: show browser options",
+                "state": state,
+            }
+
+        available = browser_tool.available_browsers()
+        candidate_names = {item.get("name") for item in available.get("items", [])}
+        aliases = {"edge": "msedge", "chromium": "playwright_chromium"}
+        normalized = aliases.get(raw, raw)
+        if normalized not in candidate_names and normalized not in {"chrome", "msedge", "brave", "firefox", "playwright_chromium"}:
+            return {
+                "ok": False,
+                "error": f"Unknown browser preference: {browser_name}",
+                "available": sorted(candidate_names),
+            }
+
+        state = self._remember_wrapper("browser", preferred_browser=normalized)
+        return {
+            "ok": True,
+            "preferred_browser": normalized,
+            "plain_english": f"JARVIS will try {normalized} first for future browser actions.",
+            "next_action": f"Try: open {normalized if normalized != 'msedge' else 'edge'}",
+            "state": state,
         }
 
     def wrapper_doctor(self, name: str | None = None) -> dict[str, Any]:
@@ -486,12 +584,15 @@ class AppWrapperService:
             tool_status = self.wrapper_status(canonical)
             if canonical == "browser":
                 playwright_installed = importlib.util.find_spec("playwright") is not None
+                available = browser_tool.available_browsers()
                 items.append(
                     {
                         "name": canonical,
                         "ready": playwright_installed,
-                        "notes": "Requires Playwright + Chromium locally.",
+                        "notes": "Uses the first available browser from the configured preference list.",
                         "playwright_installed": playwright_installed,
+                        "available_browsers": available.get("items", []),
+                        "preference": available.get("preference", []),
                         "status": tool_status.get("item"),
                         "context": browser_context,
                         "remembered_state": state,
@@ -613,20 +714,22 @@ class AppWrapperService:
     def _target_capable(self, canonical: str) -> bool:
         return canonical in {"browser", "explorer", "vscode", "terminal"}
 
-    def open_app(self, name: str, target: str | None = None) -> dict[str, Any]:
+    def open_app(self, name: str, target: str | None = None, browser_name: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_name(name)
         if not canonical:
             return {"ok": False, "error": f"Unknown app wrapper: {name}"}
 
         if canonical == "browser":
             url = (target or "https://example.com").strip()
-            result = browser_tool.open_url(url)
-            self._remember_wrapper(canonical, last_action="open", last_target=url, last_url=url, last_result_ok=result.get("ok"))
+            chosen_browser = self._preferred_browser_name(browser_name)
+            result = browser_tool.open_url(url, browser_name=chosen_browser)
+            self._remember_wrapper(canonical, last_action="open", last_target=url, last_url=url, last_browser_name=chosen_browser, last_result_ok=result.get("ok"))
             return {
                 "ok": result.get("ok", False),
                 "wrapper": canonical,
                 "target": url,
                 "mode": "playwright_managed",
+                "browser_name": chosen_browser,
                 "result": result,
             }
 
@@ -683,7 +786,7 @@ class AppWrapperService:
             "result": result,
         }
 
-    def ensure_app(self, name: str, target: str | None = None, exact: bool = False) -> dict[str, Any]:
+    def ensure_app(self, name: str, target: str | None = None, exact: bool = False, browser_name: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_name(name)
         if not canonical:
             return {"ok": False, "error": f"Unknown app wrapper: {name}"}
@@ -691,6 +794,8 @@ class AppWrapperService:
         state = wrapper_state_service.get_state(canonical)
         if (not target or not target.strip()) and self._target_capable(canonical):
             target = state.get("last_target") or state.get("last_path") or state.get("last_url")
+        if not browser_name:
+            browser_name = state.get("last_browser_name")
 
         steps: list[dict[str, Any]] = []
         status_before = self.wrapper_status(canonical)
@@ -699,44 +804,45 @@ class AppWrapperService:
 
         if canonical == "browser":
             url = (target or "https://example.com").strip()
-            open_result = self.open_url_in_browser(url)
+            open_result = self.open_url_in_browser(url, browser_name=browser_name)
             steps.append({"step": "open_or_navigate_browser", "result": open_result})
             result = {
                 "ok": self._steps_ok(steps),
                 "wrapper": canonical,
                 "target": url,
                 "workflow": "ensure",
+                "browser_name": browser_name,
                 "steps": steps,
             }
             if open_result.get("fallback"):
                 result["fallback"] = open_result.get("fallback")
                 result["reason"] = open_result.get("reason")
                 result["manual_steps"] = open_result.get("manual_steps")
-            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=url, last_url=url)
+            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=url, last_url=url, last_browser_name=browser_name)
             return result
 
         if target and self._target_capable(canonical):
-            open_result = self.open_app(canonical, target=target)
+            open_result = self.open_app(canonical, target=target, browser_name=browser_name)
             steps.append({"step": "open_targeted_instance", "result": open_result})
             focus_result = self.focus_app(canonical, exact=exact)
             steps.append({"step": "focus_after_open", "result": focus_result})
-            result = {"ok": self._steps_ok(steps), "wrapper": canonical, "target": target, "workflow": "ensure", "steps": steps}
-            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=target)
+            result = {"ok": self._steps_ok(steps), "wrapper": canonical, "target": target, "workflow": "ensure", "browser_name": browser_name, "steps": steps}
+            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=target, last_browser_name=browser_name)
             return result
 
         if item.get("running"):
             focus_result = self.focus_app(canonical, exact=exact)
             steps.append({"step": "focus_existing", "result": focus_result})
-            result = {"ok": self._steps_ok(steps), "wrapper": canonical, "workflow": "ensure", "steps": steps}
-            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"))
+            result = {"ok": self._steps_ok(steps), "wrapper": canonical, "workflow": "ensure", "browser_name": browser_name, "steps": steps}
+            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_browser_name=browser_name)
             return result
 
-        open_result = self.open_app(canonical, target=target)
+        open_result = self.open_app(canonical, target=target, browser_name=browser_name)
         steps.append({"step": "open_app", "result": open_result})
         focus_result = self.focus_app(canonical, exact=exact)
         steps.append({"step": "focus_after_open", "result": focus_result})
-        result = {"ok": self._steps_ok(steps), "wrapper": canonical, "target": target, "workflow": "ensure", "steps": steps}
-        self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=target)
+        result = {"ok": self._steps_ok(steps), "wrapper": canonical, "target": target, "workflow": "ensure", "browser_name": browser_name, "steps": steps}
+        self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=target, last_browser_name=browser_name)
         return result
 
     def quick_note(self, text: str) -> dict[str, Any]:
@@ -789,17 +895,17 @@ class AppWrapperService:
             return fallback
         return self.open_app("vscode", target=path)
 
-    def open_url_in_browser(self, url: str) -> dict[str, Any]:
+    def open_url_in_browser(self, url: str, browser_name: str | None = None) -> dict[str, Any]:
         clean_url = url.strip()
         if not clean_url:
             return {"ok": False, "error": "URL is required."}
         doctor = self.wrapper_doctor("browser")
         item = doctor.get("item") or {}
         if item and not item.get("ready"):
-            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.")
-            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_result_ok=fallback.get("ok"))
+            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.", browser_name=browser_name)
+            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=browser_name, last_result_ok=fallback.get("ok"))
             return fallback
-        return self.open_app("browser", target=clean_url)
+        return self.open_app("browser", target=clean_url, browser_name=browser_name)
 
     def run_recipe(self, name: str, target: str | None = None, text: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_recipe(name)
@@ -929,13 +1035,47 @@ class AppWrapperService:
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_search_results", "result": open_result})
             if open_result.get("fallback") == "browser_link":
-                result = {"ok": True, "recipe": canonical, "query": query, "url": url, "steps": steps}
+                result = {
+                    "ok": True,
+                    "recipe": canonical,
+                    "query": query,
+                    "url": url,
+                    "fallback": open_result.get("fallback"),
+                    "plain_english": open_result.get("plain_english"),
+                    "manual_steps": open_result.get("manual_steps"),
+                    "next_action": open_result.get("next_action"),
+                    "steps": steps,
+                }
                 self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=True)
                 return result
             title_result = browser_tool.title()
             steps.append({"step": "read_browser_title", "result": title_result})
             result = {"ok": self._steps_ok(steps), "recipe": canonical, "query": query, "url": url, "steps": steps}
             self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=result.get("ok"))
+            return result
+
+        if canonical == "browser.site_search":
+            browser_context = self.current_browser_context()
+            base_url = browser_context.get("url") or browser_context.get("remembered_url")
+            domain = self._domain_from_url(base_url)
+            query = payload or wrapper_state_service.get_state("browser").get("last_query")
+            if not domain:
+                return {
+                    "ok": False,
+                    "error": "JARVIS does not know which site to search yet. Open or resume a browser page first.",
+                    "next_action": "Try: show me the current page or open browser to a URL first.",
+                }
+            if not query:
+                return {
+                    "ok": False,
+                    "error": "This recipe needs a query. Use app recipe: browser.site_search ::: your query",
+                    "next_action": f"Try: search this site for something on {domain}",
+                }
+            scoped_query = f"site:{domain} {query}"
+            result = self.run_recipe("browser.search", text=scoped_query)
+            result["site"] = domain
+            result["original_query"] = query
+            result["recipe"] = canonical
             return result
 
         if canonical == "browser.research":
@@ -959,7 +1099,17 @@ class AppWrapperService:
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_search_results", "result": open_result})
             if open_result.get("fallback") == "browser_link":
-                result = {"ok": True, "recipe": canonical, "query": query, "url": url, "steps": steps}
+                result = {
+                    "ok": True,
+                    "recipe": canonical,
+                    "query": query,
+                    "url": url,
+                    "fallback": open_result.get("fallback"),
+                    "plain_english": open_result.get("plain_english"),
+                    "manual_steps": open_result.get("manual_steps"),
+                    "next_action": open_result.get("next_action"),
+                    "steps": steps,
+                }
                 self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=True)
                 return result
             title_result = browser_tool.title()
@@ -984,7 +1134,16 @@ class AppWrapperService:
             open_result = self.ensure_app("browser", target=url)
             steps.append({"step": "open_url", "result": open_result})
             if open_result.get("fallback") == "browser_link":
-                result = {"ok": True, "recipe": canonical, "url": url, "steps": steps}
+                result = {
+                    "ok": True,
+                    "recipe": canonical,
+                    "url": url,
+                    "fallback": open_result.get("fallback"),
+                    "plain_english": open_result.get("plain_english"),
+                    "manual_steps": open_result.get("manual_steps"),
+                    "next_action": open_result.get("next_action"),
+                    "steps": steps,
+                }
                 self._remember_wrapper("browser", last_recipe=canonical, last_url=url, last_target=url, last_result_ok=True)
                 return result
             title_result = browser_tool.title()
@@ -1058,6 +1217,26 @@ class AppWrapperService:
             self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
             self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
             return result
+
+        if canonical == "coding.resume":
+            path = self._preferred_project_target(target)
+            vscode_resume = self.run_recipe("vscode.resume", target=path)
+            steps.append({"step": "resume_code_workspace", "result": vscode_resume})
+            terminal_resume = self.run_recipe("terminal.project", target=path)
+            steps.append({"step": "resume_project_terminal", "result": terminal_resume})
+            result = {"ok": self._steps_ok(steps), "recipe": canonical, "target": path, "steps": steps}
+            self._remember_wrapper("vscode", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
+            self._remember_wrapper("terminal", last_recipe=canonical, last_path=path, last_target=path, last_result_ok=result.get("ok"))
+            return result
+
+        if canonical == "project.files":
+            path = self._preferred_project_target(target)
+            result = self.open_path_in_explorer(path)
+            return {"ok": result.get("ok", False), "recipe": canonical, "target": path, "result": result}
+
+        if canonical == "browser.page_review":
+            snapshot = self.run_recipe("browser.snapshot", target=payload or None)
+            return {"ok": snapshot.get("ok", False), "recipe": canonical, "result": snapshot}
 
         if canonical == "project.starter":
             path = self._preferred_project_target(target)

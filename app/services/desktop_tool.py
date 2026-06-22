@@ -7,6 +7,9 @@ from app.core.config import settings
 
 
 class DesktopTool:
+    def __init__(self) -> None:
+        self._focus_history: list[dict[str, Any]] = []
+
     def _windows(self) -> bool:
         return platform.system().lower().startswith("win")
 
@@ -15,12 +18,17 @@ class DesktopTool:
             "list_windows": {"risk": "low", "reversible": True, "notes": "Read-only window enumeration."},
             "active_window": {"risk": "low", "reversible": True, "notes": "Read-only active window lookup."},
             "screen_info": {"risk": "low", "reversible": True, "notes": "Read-only screen information."},
+            "find_windows": {"risk": "low", "reversible": True, "notes": "Read-only fuzzy window search."},
             "focus_window": {"risk": "medium", "reversible": True, "notes": "Changes active app focus."},
+            "focus_handle": {"risk": "medium", "reversible": True, "notes": "Changes active app focus by exact window handle."},
+            "undo_focus": {"risk": "low", "reversible": True, "notes": "Attempts to restore previous focus target."},
             "type_text": {"risk": "high", "reversible": False, "notes": "Sends text to the currently focused application."},
             "press_key": {"risk": "medium", "reversible": False, "notes": "Sends a single key to the currently focused application."},
             "hotkey": {"risk": "high", "reversible": False, "notes": "Sends a hotkey combo to the currently focused application."},
             "click": {"risk": "high", "reversible": False, "notes": "Clicks screen coordinates directly."},
             "screenshot": {"risk": "low", "reversible": True, "notes": "Captures desktop pixels only."},
+            "preview": {"risk": "low", "reversible": True, "notes": "Dry-run preview of a desktop action."},
+            "safety_status": {"risk": "low", "reversible": True, "notes": "Shows desktop guard/undo capability state."},
         }
         return {"action": action, **profiles.get(action, {"risk": "medium", "reversible": False, "notes": "No policy profile found."})}
 
@@ -75,9 +83,17 @@ class DesktopTool:
         candidate.parent.mkdir(parents=True, exist_ok=True)
         return candidate
 
+    def _window_handle(self, win) -> int | None:
+        handle = getattr(win, "_hWnd", None)
+        try:
+            return int(handle) if handle is not None else None
+        except Exception:
+            return None
+
     def _window_to_dict(self, win) -> dict[str, Any]:
         return {
             "title": (getattr(win, "title", "") or "").strip(),
+            "handle": self._window_handle(win),
             "left": getattr(win, "left", None),
             "top": getattr(win, "top", None),
             "width": getattr(win, "width", None),
@@ -97,26 +113,49 @@ class DesktopTool:
             items.append(win)
         return items
 
-    def _match_windows(self, title: str, exact: bool = False):
-        title_l = title.lower().strip()
-        all_windows = self._all_titled_windows()
+    def _score_window_match(self, needle: str, current_title: str, exact: bool = False) -> float:
+        title_l = current_title.lower().strip()
+        needle_l = needle.lower().strip()
+        if not needle_l:
+            return 0.0
         if exact:
-            matches = [w for w in all_windows if (w.title or "").strip().lower() == title_l]
-            return matches
+            return 100.0 if title_l == needle_l else 0.0
+        if title_l == needle_l:
+            return 100.0
+        if title_l.startswith(needle_l):
+            return 85.0
+        if needle_l in title_l:
+            return 65.0
+        words = needle_l.split()
+        if words and all(word in title_l for word in words):
+            return 55.0
+        return 0.0
 
-        exact_matches = []
-        prefix_matches = []
-        contains_matches = []
-        for win in all_windows:
+    def _match_windows(self, title: str, exact: bool = False):
+        scored = []
+        for win in self._all_titled_windows():
             current_title = (win.title or "").strip()
-            lower_title = current_title.lower()
-            if lower_title == title_l:
-                exact_matches.append(win)
-            elif lower_title.startswith(title_l):
-                prefix_matches.append(win)
-            elif title_l in lower_title:
-                contains_matches.append(win)
-        return exact_matches + prefix_matches + contains_matches
+            score = self._score_window_match(title, current_title, exact=exact)
+            if score > 0:
+                scored.append((score, win))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [win for _, win in scored]
+
+    def _find_window_by_handle(self, handle: int):
+        for win in self._all_titled_windows():
+            if self._window_handle(win) == handle:
+                return win
+        return None
+
+    def _record_focus_history(self, previous_window: dict[str, Any] | None, next_window: dict[str, Any] | None) -> None:
+        self._focus_history.append(
+            {
+                "ts": datetime.now(UTC).isoformat(),
+                "previous_window": previous_window,
+                "next_window": next_window,
+            }
+        )
+        self._focus_history = self._focus_history[-20:]
 
     def screen_info(self) -> dict[str, Any]:
         if not settings.allow_desktop_tool:
@@ -174,7 +213,38 @@ class DesktopTool:
         except Exception as e:
             return self._with_guard("list_windows", {"ok": False, "error": str(e)})
 
-    def focus_window(self, title: str, exact: bool = False) -> dict[str, Any]:
+    def find_windows(self, title: str, exact: bool = False) -> dict[str, Any]:
+        if not settings.allow_desktop_tool:
+            return self._with_guard("find_windows", {"ok": False, "error": "Desktop tool is disabled in config."})
+        if not self._windows():
+            return self._with_guard("find_windows", {"ok": False, "error": "Desktop find currently targets Windows first."})
+        if not title.strip():
+            return self._with_guard("find_windows", {"ok": False, "error": "Window title is required."})
+
+        try:
+            items = []
+            for win in self._all_titled_windows():
+                current_title = (win.title or "").strip()
+                score = self._score_window_match(title, current_title, exact=exact)
+                if score > 0:
+                    payload = self._window_to_dict(win)
+                    payload["score"] = score
+                    items.append(payload)
+            items.sort(key=lambda item: item.get("score", 0), reverse=True)
+            return self._with_guard(
+                "find_windows",
+                {
+                    "ok": True,
+                    "requested_title": title,
+                    "exact": exact,
+                    "count": len(items),
+                    "items": items[:20],
+                },
+            )
+        except Exception as e:
+            return self._with_guard("find_windows", {"ok": False, "error": str(e), "exact": exact})
+
+    def focus_window(self, title: str, exact: bool = False, match_index: int = 0) -> dict[str, Any]:
         if not settings.allow_desktop_tool:
             return self._with_guard("focus_window", {"ok": False, "error": "Desktop tool is disabled in config."})
         if not self._windows():
@@ -196,7 +266,19 @@ class DesktopTool:
                     },
                 )
 
-            win = matches[0]
+            if match_index < 0 or match_index >= len(matches):
+                return self._with_guard(
+                    "focus_window",
+                    {
+                        "ok": False,
+                        "error": f"match_index {match_index} is out of range for {len(matches)} match(es).",
+                        "candidate_titles": [self._window_to_dict(m)["title"] for m in matches[:10]],
+                        "exact": exact,
+                    },
+                )
+
+            previous = self.active_window().get("window")
+            win = matches[match_index]
             restore_attempted = False
             activation_attempts = []
 
@@ -222,8 +304,15 @@ class DesktopTool:
 
             active = self.active_window()
             selected = self._window_to_dict(win)
-            focused_title = (active.get("window") or {}).get("title") if active.get("ok") else None
-            success = focused_title is not None and focused_title.lower() == selected["title"].lower()
+            focused = (active.get("window") or {})
+            focused_handle = focused.get("handle")
+            success = focused_handle is not None and focused_handle == selected.get("handle")
+            if not success:
+                focused_title = focused.get("title")
+                success = focused_title is not None and focused_title.lower() == selected["title"].lower()
+
+            if success:
+                self._record_focus_history(previous_window=previous, next_window=selected)
 
             return self._with_guard(
                 "focus_window",
@@ -232,6 +321,8 @@ class DesktopTool:
                     "requested_title": title,
                     "selected_window": selected,
                     "match_count": len(matches),
+                    "match_index": match_index,
+                    "candidate_titles": [self._window_to_dict(m)["title"] for m in matches[:6]],
                     "other_matches": [self._window_to_dict(m)["title"] for m in matches[1:6]],
                     "restore_attempted": restore_attempted,
                     "activation_attempts": activation_attempts,
@@ -242,6 +333,100 @@ class DesktopTool:
             )
         except Exception as e:
             return self._with_guard("focus_window", {"ok": False, "error": str(e), "exact": exact})
+
+    def focus_handle(self, handle: int) -> dict[str, Any]:
+        if not settings.allow_desktop_tool:
+            return self._with_guard("focus_handle", {"ok": False, "error": "Desktop tool is disabled in config."})
+        if not self._windows():
+            return self._with_guard("focus_handle", {"ok": False, "error": "Desktop focus currently targets Windows first."})
+        try:
+            previous = self.active_window().get("window")
+            win = self._find_window_by_handle(handle)
+            if not win:
+                return self._with_guard("focus_handle", {"ok": False, "error": f"No window found for handle {handle}"})
+            try:
+                if getattr(win, "isMinimized", False):
+                    win.restore()
+            except Exception:
+                pass
+            win.activate()
+            active = self.active_window()
+            selected = self._window_to_dict(win)
+            success = ((active.get("window") or {}).get("handle") == selected.get("handle"))
+            if success:
+                self._record_focus_history(previous_window=previous, next_window=selected)
+            return self._with_guard(
+                "focus_handle",
+                {
+                    "ok": success,
+                    "requested_handle": handle,
+                    "selected_window": selected,
+                    "active_window_after": active.get("window") if active.get("ok") else None,
+                    "error": None if success else "Window handle was found but focus could not be verified.",
+                },
+            )
+        except Exception as e:
+            return self._with_guard("focus_handle", {"ok": False, "error": str(e)})
+
+    def safety_status(self) -> dict[str, Any]:
+        return self._with_guard(
+            "safety_status",
+            {
+                "ok": True,
+                "focus_history_entries": len(self._focus_history),
+                "undo_focus_supported": True,
+                "high_risk_actions": ["type_text", "hotkey", "click"],
+                "guarded_actions": [
+                    "focus_window",
+                    "focus_handle",
+                    "type_text",
+                    "press_key",
+                    "hotkey",
+                    "click",
+                    "screenshot",
+                ],
+            },
+        )
+
+    def preview_action(self, action: str, payload: dict[str, Any]) -> dict[str, Any]:
+        active = self.active_window()
+        screen = self.screen_info()
+        preview = {
+            "ok": True,
+            "requested_action": action,
+            "payload": payload,
+            "active_window": active.get("window") if active.get("ok") else None,
+            "screen": {
+                "width": screen.get("width"),
+                "height": screen.get("height"),
+                "mouse_x": screen.get("mouse_x"),
+                "mouse_y": screen.get("mouse_y"),
+            },
+        }
+        if action == "click":
+            x = payload.get("x")
+            y = payload.get("y")
+            width = screen.get("width") or 0
+            height = screen.get("height") or 0
+            preview["inside_screen"] = isinstance(x, int) and isinstance(y, int) and 0 <= x < width and 0 <= y < height
+        return self._with_guard("preview", preview)
+
+    def undo_last_focus(self) -> dict[str, Any]:
+        if not self._focus_history:
+            return self._with_guard("undo_focus", {"ok": False, "error": "No focus history available to undo."})
+        last = self._focus_history.pop()
+        previous = last.get("previous_window") or {}
+        handle = previous.get("handle")
+        title = previous.get("title")
+        if handle is not None:
+            result = self.focus_handle(int(handle))
+            result["undo_source"] = last
+            return self._with_guard("undo_focus", result)
+        if title:
+            result = self.focus_window(title, exact=False)
+            result["undo_source"] = last
+            return self._with_guard("undo_focus", result)
+        return self._with_guard("undo_focus", {"ok": False, "error": "Previous focus target had no recoverable handle or title."})
 
     def type_text(self, text: str) -> dict[str, Any]:
         if not settings.allow_desktop_tool:

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     browser_headless: bool = Field(default=False, alias="BROWSER_HEADLESS")
     browser_default_timeout_ms: int = Field(default=15000, alias="BROWSER_DEFAULT_TIMEOUT_MS")
     browser_artifact_dir: Path = Field(default=Path("./data/browser"), alias="BROWSER_ARTIFACT_DIR")
+    browser_channel_preference: str = Field(default="chrome,msedge,brave,firefox,playwright_chromium", alias="BROWSER_CHANNEL_PREFERENCE")
 
     allow_process_tool: bool = Field(default=True, alias="ALLOW_PROCESS_TOOL")
     process_start_timeout_seconds: int = Field(default=5, alias="PROCESS_START_TIMEOUT_SECONDS")

@@ -15,6 +15,7 @@ class BrowserActionRequest(BaseModel):
     key: str | None = None
     path: str | None = None
     headless: bool | None = None
+    browser_name: str | None = None
     max_chars: int = Field(default=4000, ge=100, le=20000)
 
 
@@ -25,14 +26,21 @@ def browser_state() -> dict:
     return result
 
 
+@router.get("/available")
+def browser_available() -> dict:
+    result = browser_tool.available_browsers()
+    audit_service.log_event("browser_available", {"result_ok": result.get("ok")})
+    return result
+
+
 @router.post("/action")
 def browser_action(payload: BrowserActionRequest) -> dict:
     action = payload.action.strip().lower()
 
     if action == "start":
-        result = browser_tool.start(headless=payload.headless)
+        result = browser_tool.start(headless=payload.headless, browser_name=payload.browser_name)
     elif action in {"open", "visit", "goto"}:
-        result = browser_tool.open_url(payload.url or "", headless=payload.headless)
+        result = browser_tool.open_url(payload.url or "", headless=payload.headless, browser_name=payload.browser_name)
     elif action == "back":
         result = browser_tool.back()
     elif action == "forward":
@@ -65,6 +73,7 @@ def browser_action(payload: BrowserActionRequest) -> dict:
             "url": payload.url,
             "selector": payload.selector,
             "path": payload.path,
+            "browser_name": payload.browser_name,
             "result_ok": result.get("ok"),
         },
     )

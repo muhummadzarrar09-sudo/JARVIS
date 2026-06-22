@@ -9,9 +9,11 @@ from app.services.file_tool import file_tool
 from app.services.llm_router import llm_router
 from app.services.memory import memory_service
 from app.services.process_tool import process_tool
+from app.services.progress_service import progress_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.shell_tool import shell_tool
 from app.services.task_service import task_service
+from app.services.validation_service import validation_service
 
 
 class Orchestrator:
@@ -69,13 +71,22 @@ class Orchestrator:
         if lowered in {"what should i do next", "what next", "show next steps", "show me what to do next", "show me where to start", "where should i start", "get me started"}:
             return "quick_next_steps", "guide", quick_actions_service.next_steps()
 
-        if lowered in {"show me today", "today", "give me my day", "show me my day"}:
+        if lowered in {"show me today", "today", "give me my day", "show me my day", "how does my day look"}:
             return "quick_today", "guide", quick_actions_service.today_brief()
+
+        if lowered in {"show my progress", "how am i doing", "where am i at", "show progress", "how's my progress"}:
+            return "quick_progress", "guide", quick_actions_service.progress()
+
+        if lowered in {"validate my machine", "validate my setup", "show validation report", "run validation"}:
+            return "validation_report", "validation", validation_service.report()
+
+        if lowered in {"how much is phase 4 done", "phase 4 status", "phase 4 progress", "what's left in phase 4", "whats left in phase 4"}:
+            return "phase4_status", "phase4", progress_service.phase4_status()
 
         if lowered in {"show me today's focus", "what should i focus on", "focus me", "show my focus", "what should i work on right now", "show me my focus"}:
             return "quick_focus", "guide", quick_actions_service.focus()
 
-        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work", "take me back to my last work"}:
+        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work", "take me back to my last work", "open my last project"}:
             return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
 
         if lowered in {"show me recent work", "what was i doing", "where did i leave off"}:
@@ -90,11 +101,17 @@ class Orchestrator:
         if lowered in {"start coding", "set me up to code", "get me ready to code"}:
             return "app_recipe", "coding.start", app_wrapper_service.run_recipe("coding.start", target=".")
 
-        if lowered in {"review this project", "give me the project overview", "show project overview", "help me review this project"}:
+        if lowered in {"continue coding", "resume coding", "get me back to coding"}:
+            return "app_recipe", "coding.resume", app_wrapper_service.run_recipe("coding.resume", target=".")
+
+        if lowered in {"review this project", "give me the project overview", "show project overview", "help me review this project", "summarize this project"}:
             return "app_recipe", "project.review", app_wrapper_service.run_recipe("project.review", target=".")
 
-        if lowered in {"show my project files", "show project files", "open my project files"}:
-            return "app_explore", ".", app_wrapper_service.open_path_in_explorer(".")
+        if lowered in {"show my project files", "show project files", "open my project files", "open my workspace"}:
+            return "app_recipe", "project.files", app_wrapper_service.run_recipe("project.files", target=".")
+
+        if lowered in {"show my setup blockers", "what is blocking me", "show blockers"}:
+            return "quick_setup", "setup", quick_actions_service.setup_summary()
 
         if lowered in {"show my tasks", "show tasks", "what are my tasks", "what am i working on", "open my tasks"}:
             return "task_list_open", "open", {"ok": True, "items": task_service.list_tasks(status="open", limit=20)}
@@ -159,7 +176,10 @@ class Orchestrator:
         if lowered in {"show wrapper status", "show wrappers", "wrapper status"}:
             return "app_status", "apps", app_wrapper_service.wrapper_status(None)
 
-        if lowered in {"check my setup", "check setup", "run doctor", "show doctor", "are my tools ready", "check if my tools are ready", "show setup"}:
+        if lowered in {"show setup", "check my setup", "check setup", "are my tools ready", "check if my tools are ready", "what is blocking me"}:
+            return "quick_setup", "setup", quick_actions_service.setup_summary()
+
+        if lowered in {"run doctor", "show doctor"}:
             return "app_doctor", "apps", app_wrapper_service.wrapper_doctor(None)
 
         if lowered in {"show my project", "project info", "what project is this", "inspect project"}:
@@ -167,6 +187,32 @@ class Orchestrator:
 
         if lowered in {"open browser", "start browser"}:
             return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target="https://example.com")
+
+        if lowered in {"use default browser", "reset browser preference", "browser auto"}:
+            return "browser_preference", "auto", app_wrapper_service.set_browser_preference(None)
+
+        for browser_name in ("chrome", "msedge", "edge", "brave", "firefox"):
+            if lowered in {f"use {browser_name}", f"prefer {browser_name}", f"use {browser_name} browser", f"prefer {browser_name} browser"}:
+                requested = "msedge" if browser_name == "edge" else browser_name
+                return "browser_preference", requested, app_wrapper_service.set_browser_preference(requested)
+            if lowered in {f"use {browser_name} for browser", f"prefer {browser_name} for browser"}:
+                requested = "msedge" if browser_name == "edge" else browser_name
+                return "browser_preference", requested, app_wrapper_service.set_browser_preference(requested)
+            
+             
+            if lowered == f"open {browser_name}":
+                requested = "msedge" if browser_name == "edge" else browser_name
+                return "app_ensure", requested, app_wrapper_service.ensure_app("browser", target="https://example.com", browser_name=requested)
+            if lowered.startswith(f"open {browser_name} to "):
+                requested = "msedge" if browser_name == "edge" else browser_name
+                target = normalized[len(f"open {browser_name} to "):].strip()
+                return "app_ensure", requested, app_wrapper_service.ensure_app("browser", target=target, browser_name=requested)
+
+        if lowered in {"show browser options", "what browsers can you use", "which browser will you use", "browser options"}:
+            return "browser_available", "browser", browser_tool.available_browsers()
+
+        if lowered in {"show me browser status", "show browser status", "browser status", "what is my browser doing"}:
+            return "app_browser_context", "browser", app_wrapper_service.current_browser_context()
 
         if lowered.startswith("open browser to "):
             target = normalized[len("open browser to "):].strip()
@@ -180,11 +226,31 @@ class Orchestrator:
             query = normalized[len("search for "):].strip()
             return "app_recipe", "browser.search", app_wrapper_service.run_recipe("browser.search", text=query)
 
+        if lowered.startswith("search this site for "):
+            query = normalized[len("search this site for "):].strip()
+            return "app_recipe", "browser.site_search", app_wrapper_service.run_recipe("browser.site_search", text=query)
+
+        if lowered.startswith("find on this site "):
+            query = normalized[len("find on this site "):].strip()
+            return "app_recipe", "browser.site_search", app_wrapper_service.run_recipe("browser.site_search", text=query)
+
         if lowered.startswith("research "):
             query = normalized[len("research "):].strip()
             return "app_recipe", "browser.research", app_wrapper_service.run_recipe("browser.research", text=query)
 
-        if lowered in {"show me the current page", "show current page", "what page am i on", "resume browser", "continue browsing"}:
+        if lowered.startswith("start research on "):
+            query = normalized[len("start research on "):].strip()
+            return "app_recipe", "browser.research", app_wrapper_service.run_recipe("browser.research", text=query)
+
+        if lowered.startswith("research this "):
+            query = normalized[len("research this "):].strip()
+            return "app_recipe", "browser.research", app_wrapper_service.run_recipe("browser.research", text=query)
+
+        if lowered.startswith("look up "):
+            query = normalized[len("look up "):].strip()
+            return "app_recipe", "browser.search", app_wrapper_service.run_recipe("browser.search", text=query)
+
+        if lowered in {"show me the current page", "show current page", "what page am i on", "resume browser", "continue browsing", "read the current page"}:
             return "app_recipe", "browser.resume", app_wrapper_service.run_recipe("browser.resume")
 
         if lowered in {"open code", "open vscode", "open code here", "open this folder in code", "open my code"}:
@@ -461,6 +527,11 @@ class Orchestrator:
             result = desktop_tool.list_windows()
             return "desktop_windows", "desktop", result
 
+        raw_desktop_find = self._tail_after_prefixes(normalized, lowered, ["desktop find:", "desktop find "])
+        if raw_desktop_find is not None:
+            result = desktop_tool.find_windows(raw_desktop_find, exact=False)
+            return "desktop_find", raw_desktop_find, result
+
         if lowered == "desktop active":
             result = desktop_tool.active_window()
             return "desktop_active", "desktop", result
@@ -632,6 +703,12 @@ class Orchestrator:
             summary = f"Found {len(data.get('items', []))} recent session(s)."
         elif tool_name == "quick_recent_work":
             summary = "Here is a simple summary of your recent work."
+        elif tool_name == "quick_setup":
+            summary = data.get("plain_english") or "Here is your setup summary."
+        elif tool_name == "validation_report":
+            summary = data.get("plain_english") or "Here is your validation report."
+        elif tool_name == "phase4_status" and data.get("percent") is not None:
+            summary = f"Phase 4 is {data.get('percent')}% complete."
         elif data.get("fallback") == "readme_preview":
             summary = "JARVIS showed a README preview instead of opening an app."
         elif data.get("fallback") == "directory_listing":
@@ -644,8 +721,17 @@ class Orchestrator:
             summary = f"Wrapper: {data.get('wrapper')}"
         elif tool_name == "app_project_context" and data.get("path"):
             summary = f"Project path: {data.get('path')}"
+        elif tool_name == "browser_available" and isinstance(data.get('items'), list):
+            summary = f"JARVIS found {len(data.get('items', []))} browser option(s)."
+        elif tool_name == "app_browser_context":
+            if data.get("started"):
+                summary = f"Current browser page: {data.get('title') or data.get('url')}"
+            elif data.get("remembered_url"):
+                summary = f"Remembered browser page: {data.get('remembered_url')}"
         elif tool_name.startswith("browser_") and data.get("url"):
             summary = f"Browser URL: {data.get('url')}"
+        elif tool_name == "app_recipe" and data.get("site"):
+            summary = f"Scoped browser search on {data.get('site')}"
         elif tool_name.startswith("desktop_") and data.get("path"):
             summary = f"Saved artifact: {data.get('path')}"
         else:
@@ -659,14 +745,26 @@ class Orchestrator:
             tip = "Use this to see what is ready on your machine before trying wrapper recipes."
         elif tool_name == "app_project_context":
             tip = "Try: open readme, open code here, open terminal here, or resume project."
+        elif tool_name == "browser_available":
+            tip = "JARVIS will try browsers in the order shown by your configured preference list."
+        elif tool_name == "app_browser_context":
+            tip = "Try: show me the current page, search for something, search this site for something, or open browser to a URL."
         elif tool_name == "session_list":
             tip = "In the terminal, use /sessions and then /use 1 or /resume to switch sessions."
         elif tool_name == "quick_today":
             tip = "You can say: show me today's focus, show my tasks, review this project, or start coding."
+        elif tool_name == "quick_progress":
+            tip = "You can say: what task should i do next, show my sessions, or show me the current page."
+        elif tool_name == "validation_report":
+            tip = "Use this before testing wrappers on your real machine so you know what is missing."
+        elif tool_name == "quick_setup":
+            tip = "You can say: run doctor for technical details, or open readme / start coding to keep moving." 
         elif tool_name == "quick_focus":
             tip = "You can say: work on next task, complete current task, open code here, or open terminal here."
         elif tool_name == "quick_recent_work":
             tip = "You can say: resume project, show my sessions, or show me today's focus."
+        elif tool_name == "phase4_status":
+            tip = "Use this to see how much of the desktop-control phase is complete and what is left."
         elif tool_name in {"task_list_open", "task_next", "task_in_progress", "task_current"}:
             tip = "You can say: add task ..., focus on task 2, work on next task, complete next task, done with task 2, or reopen task 2."
         elif data.get("fallback") == "readme_preview":

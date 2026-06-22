@@ -20,6 +20,16 @@ def today() -> dict:
     return quick_actions_service.today_brief()
 
 
+@router.get("/progress")
+def progress() -> dict:
+    return quick_actions_service.progress()
+
+
+@router.get("/setup")
+def setup() -> dict:
+    return quick_actions_service.setup_summary()
+
+
 @router.get("/search")
 def search(query: str = Query(..., min_length=1)) -> dict:
     return quick_actions_service.search(query)

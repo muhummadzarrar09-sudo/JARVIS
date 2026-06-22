@@ -64,6 +64,8 @@ def app_action(payload: AppActionRequest) -> dict:
         result = app_wrapper_service.wrapper_doctor(payload.name)
     elif action in {"project", "context", "project_context"}:
         result = app_wrapper_service.current_project_context(payload.target)
+    elif action in {"browser_preference", "prefer_browser"}:
+        result = app_wrapper_service.set_browser_preference(payload.target or payload.name)
     elif action == "reset":
         result = app_wrapper_service.reset_wrapper_state(payload.name)
     elif action == "recipe":

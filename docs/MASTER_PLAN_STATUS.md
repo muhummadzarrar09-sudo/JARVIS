@@ -68,6 +68,8 @@ Status: started
 - selector inspect / force click helpers
 - browser wrapper recipes
 - browser resume/snapshot/research flows
+- browser candidate detection for installed browsers (Chrome/Edge/Brave/Firefox/playwright bundle)
+- browser site-scoped search and remembered-browser branching
 
 Still pending:
 - multi-tab management
@@ -91,11 +93,23 @@ Status: heavily active
 - `/do ...` shortcut
 - README, directory, and browser-link fallbacks when local apps are unavailable
 
-Still pending:
-- deeper live branching from actual Windows GUI state
-- stronger exact activation/focus reliability
-- richer app-specific workflows
-- even smoother local fallbacks everywhere
+Phase 4 completion estimate: **100.0%**
+
+#### Phase 4 mini-task breakdown
+- Desktop control primitives: **9/9 complete (100.0%)**
+  - done: desktop window listing, active-window inspection, screen-state inspection, focus by title, keyboard typing starter, hotkey + coordinate click starter, desktop screenshots, exact activation hardening beyond title matching, richer desktop safety / undo policies
+  - left: none in the current desktop primitives bucket
+- Wrappers and recipes: **7/7 complete (100%)**
+  - done: app wrapper starter, workflow recipe starter, wrapper remembered state, workspace-aware wrapper flows, browser candidate detection + preference support, deeper live browser branching starter, broader app-specific workflow coverage
+  - left: none in the currently tracked wrapper/recipe bucket
+- Command-center UX: **6/6 complete (100%)**
+  - done: command-center panels, beginner-friendly natural commands + `/do`, timeline/replay/operator surfaces, project-context panels, browser panel / browser option visibility, desktop app shell preparation layer
+  - left: none in the currently tracked command-center bucket
+
+Still pending after Phase 4 checklist completion:
+- validate exact desktop focus/activation behavior on the real Windows machine
+- validate multi-browser launch behavior on the real Windows machine
+- continue refining browser/window live-state branching with real runtime feedback
 
 ### Phase 5 — Desktop App Shell + Voice/UI
 Status: planned
@@ -135,6 +149,7 @@ Examples:
 - show project overview
 - review this project
 - show my project files
+- show my setup blockers
 - what should i do next
 - show me where to start
 - show me today's focus
@@ -151,13 +166,20 @@ Examples:
 - open code here
 - open files here
 - open terminal here
+- open chrome
+- open edge to https://example.com
+- use chrome browser
+- use default browser
 - search for local ai agents
+- search this site for pricing
 - research local ai agents
 - show me the current page
+- show browser options
 - resume project
 - resume browser
 - resume code
 - start coding
+- continue coding
 - take screenshot
 - write note remember this idea
 - start my workday
@@ -167,8 +189,12 @@ Examples:
 ### Console helpers
 - /starter
 - /today
+- /progress
+- /setup
+- /phase4
 - /next
 - /focus
+- /browser
 - /status
 - /wrappers
 - /recipes
@@ -187,8 +213,10 @@ Examples:
 - /do <goal>
 
 ## Immediate next sprint focus
-1. add richer one-shot workflows for common everyday goals
-2. deepen browser/runtime fallbacks so links and previews are always useful
-3. improve live-state-aware branching from browser/window conditions
-4. continue simplifying session/task flows for non-technical users
-5. keep maturing the terminal command center toward the future desktop app shell
+1. validate installed-browser preference launching on the real Windows machine and tune browser-specific fallbacks
+2. validate exact desktop focus/activation behavior on the real Windows machine
+3. deepen live-state-aware branching from browser/window conditions
+4. add richer one-shot workflows for common everyday goals
+5. continue simplifying session/task flows for non-technical users
+6. keep maturing the terminal command center toward the future desktop app shell
+7. keep improving browser/runtime fallbacks so links and previews are always useful

@@ -1,3 +1,5 @@
+import os
+import shutil
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
@@ -11,6 +13,8 @@ class BrowserTool:
         self._browser = None
         self._context = None
         self._page = None
+        self._current_browser_name: str | None = None
+        self._current_engine: str | None = None
 
     def _import_playwright(self):
         try:
@@ -40,34 +44,177 @@ class BrowserTool:
         candidate.parent.mkdir(parents=True, exist_ok=True)
         return candidate
 
-    def start(self, headless: bool | None = None) -> dict[str, Any]:
+    def _windows(self) -> bool:
+        return os.name == "nt"
+
+    def _candidate_from_path(self, name: str, engine: str, raw_path: str) -> dict[str, Any] | None:
+        path = Path(raw_path)
+        if path.exists() and path.is_file():
+            return {
+                "name": name,
+                "engine": engine,
+                "executable_path": str(path),
+                "source": "system",
+            }
+        return None
+
+    def _which_candidate(self, name: str, engine: str, executable_names: list[str]) -> dict[str, Any] | None:
+        for executable in executable_names:
+            found = shutil.which(executable)
+            if found:
+                return {
+                    "name": name,
+                    "engine": engine,
+                    "executable_path": found,
+                    "source": "path",
+                }
+        return None
+
+    def _detect_candidates(self) -> list[dict[str, Any]]:
+        candidates: list[dict[str, Any]] = []
+
+        def add(candidate: dict[str, Any] | None) -> None:
+            if not candidate:
+                return
+            if any(existing["name"] == candidate["name"] for existing in candidates):
+                return
+            candidates.append(candidate)
+
+        if self._windows():
+            local = os.environ.get("LOCALAPPDATA", "")
+            program_files = os.environ.get("PROGRAMFILES", "")
+            program_files_x86 = os.environ.get("PROGRAMFILES(X86)", "")
+
+            add(self._candidate_from_path("chrome", "chromium", os.path.join(local, "Google", "Chrome", "Application", "chrome.exe")))
+            add(self._candidate_from_path("chrome", "chromium", os.path.join(program_files, "Google", "Chrome", "Application", "chrome.exe")))
+            add(self._candidate_from_path("chrome", "chromium", os.path.join(program_files_x86, "Google", "Chrome", "Application", "chrome.exe")))
+
+            add(self._candidate_from_path("msedge", "chromium", os.path.join(program_files, "Microsoft", "Edge", "Application", "msedge.exe")))
+            add(self._candidate_from_path("msedge", "chromium", os.path.join(program_files_x86, "Microsoft", "Edge", "Application", "msedge.exe")))
+
+            add(self._candidate_from_path("brave", "chromium", os.path.join(local, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")))
+            add(self._candidate_from_path("brave", "chromium", os.path.join(program_files, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")))
+            add(self._candidate_from_path("brave", "chromium", os.path.join(program_files_x86, "BraveSoftware", "Brave-Browser", "Application", "brave.exe")))
+
+            add(self._candidate_from_path("firefox", "firefox", os.path.join(program_files, "Mozilla Firefox", "firefox.exe")))
+            add(self._candidate_from_path("firefox", "firefox", os.path.join(program_files_x86, "Mozilla Firefox", "firefox.exe")))
+        else:
+            add(self._which_candidate("chrome", "chromium", ["google-chrome", "google-chrome-stable", "chrome"]))
+            add(self._which_candidate("msedge", "chromium", ["microsoft-edge", "microsoft-edge-stable", "msedge"]))
+            add(self._which_candidate("brave", "chromium", ["brave-browser", "brave"]))
+            add(self._which_candidate("firefox", "firefox", ["firefox"]))
+            add(self._which_candidate("chromium", "chromium", ["chromium", "chromium-browser"]))
+
+        candidates.append(
+            {
+                "name": "playwright_chromium",
+                "engine": "chromium",
+                "executable_path": None,
+                "source": "playwright_bundle",
+            }
+        )
+        return candidates
+
+    def available_browsers(self) -> dict[str, Any]:
+        candidates = self._detect_candidates()
+        return {
+            "ok": True,
+            "preference": [item.strip() for item in settings.browser_channel_preference.split(",") if item.strip()],
+            "items": candidates,
+            "count": len(candidates),
+        }
+
+    def _ordered_candidates(self, preferred_browser: str | None = None) -> list[dict[str, Any]]:
+        detected = self._detect_candidates()
+        by_name = {item["name"]: item for item in detected}
+        ordered: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        requested_names: list[str] = []
+        if preferred_browser and preferred_browser.strip():
+            requested_names.append(preferred_browser.strip().lower())
+
+        requested_names.extend([item.strip() for item in settings.browser_channel_preference.split(",") if item.strip()])
+
+        for name in requested_names:
+            candidate = by_name.get(name)
+            if candidate and name not in seen:
+                ordered.append(candidate)
+                seen.add(name)
+
+        for candidate in detected:
+            if candidate["name"] not in seen:
+                ordered.append(candidate)
+                seen.add(candidate["name"])
+        return ordered
+
+    def _engine_launcher(self, engine_name: str):
+        assert self._playwright is not None
+        if engine_name == "firefox":
+            return self._playwright.firefox
+        return self._playwright.chromium
+
+    def start(self, headless: bool | None = None, browser_name: str | None = None) -> dict[str, Any]:
         if not settings.allow_browser_tool:
             return {"ok": False, "error": "Browser tool is disabled in config."}
 
         effective_headless = settings.browser_headless if headless is None else headless
+        requested_browser = (browser_name or "").strip().lower() or None
 
         if self._browser and self._page:
-            return {
-                "ok": True,
-                "message": "Browser already running.",
-                "headless": effective_headless,
-                "url": self._page.url,
-                "title": self._page.title() if self._page else None,
-            }
+            if requested_browser and requested_browser != self._current_browser_name:
+                self.close()
+            else:
+                return {
+                    "ok": True,
+                    "message": "Browser already running.",
+                    "headless": effective_headless,
+                    "url": self._page.url,
+                    "title": self._page.title() if self._page else None,
+                    "browser_name": self._current_browser_name,
+                    "engine": self._current_engine,
+                }
 
+        errors: list[dict[str, Any]] = []
         try:
             sync_playwright = self._import_playwright()
             self._playwright = sync_playwright().start()
-            self._browser = self._playwright.chromium.launch(headless=effective_headless)
-            self._context = self._browser.new_context()
-            self._page = self._context.new_page()
-            self._page.set_default_timeout(settings.browser_default_timeout_ms)
-            return {"ok": True, "message": "Browser started.", "headless": effective_headless}
+
+            for candidate in self._ordered_candidates(preferred_browser=requested_browser):
+                try:
+                    launcher = self._engine_launcher(candidate["engine"])
+                    launch_kwargs: dict[str, Any] = {"headless": effective_headless}
+                    if candidate.get("executable_path"):
+                        launch_kwargs["executable_path"] = candidate["executable_path"]
+                    self._browser = launcher.launch(**launch_kwargs)
+                    self._context = self._browser.new_context()
+                    self._page = self._context.new_page()
+                    self._page.set_default_timeout(settings.browser_default_timeout_ms)
+                    self._current_browser_name = candidate["name"]
+                    self._current_engine = candidate["engine"]
+                    return {
+                        "ok": True,
+                        "message": "Browser started.",
+                        "headless": effective_headless,
+                        "browser_name": self._current_browser_name,
+                        "engine": self._current_engine,
+                        "source": candidate.get("source"),
+                    }
+                except Exception as e:
+                    errors.append({"candidate": candidate["name"], "error": str(e)})
+
+            return {
+                "ok": False,
+                "error": "No configured browser candidate could be launched.",
+                "requested_browser": requested_browser,
+                "candidates": self._ordered_candidates(preferred_browser=requested_browser),
+                "errors": errors,
+            }
         except Exception as e:
             return {
                 "ok": False,
                 "error": (
-                    f"Failed to start Playwright Chromium: {e}. "
+                    f"Failed to start Playwright browser runtime: {e}. "
                     "If Playwright is installed, run `python -m playwright install chromium`."
                 ),
             }
@@ -118,30 +265,36 @@ class BrowserTool:
 
     def state(self) -> dict[str, Any]:
         if not self._page:
-            return {"ok": True, "started": False, "url": None, "title": None}
+            return {"ok": True, "started": False, "url": None, "title": None, "browser_name": self._current_browser_name, "engine": self._current_engine}
         try:
             return {
                 "ok": True,
                 "started": True,
                 "url": self._page.url,
                 "title": self._page.title(),
+                "browser_name": self._current_browser_name,
+                "engine": self._current_engine,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
-    def open_url(self, url: str, headless: bool | None = None) -> dict[str, Any]:
+    def open_url(self, url: str, headless: bool | None = None, browser_name: str | None = None) -> dict[str, Any]:
         if not url.strip():
             return {"ok": False, "error": "URL is required."}
 
+        requested_browser = (browser_name or "").strip().lower() or None
+        if requested_browser and self._page is not None and requested_browser != self._current_browser_name:
+            self.close()
+
         if self._page is None:
-            result = self.start(headless=headless)
+            result = self.start(headless=headless, browser_name=requested_browser)
             if not result.get("ok"):
                 return result
 
         try:
             assert self._page is not None
             self._page.goto(url, wait_until="domcontentloaded")
-            return {"ok": True, "url": self._page.url, "title": self._page.title()}
+            return {"ok": True, "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -152,7 +305,7 @@ class BrowserTool:
         try:
             assert self._page is not None
             self._page.go_back(wait_until="domcontentloaded")
-            return {"ok": True, "url": self._page.url, "title": self._page.title()}
+            return {"ok": True, "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -163,7 +316,7 @@ class BrowserTool:
         try:
             assert self._page is not None
             self._page.go_forward(wait_until="domcontentloaded")
-            return {"ok": True, "url": self._page.url, "title": self._page.title()}
+            return {"ok": True, "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -173,7 +326,7 @@ class BrowserTool:
             return result or {"ok": False, "error": "Browser unavailable."}
         try:
             assert self._page is not None
-            return {"ok": True, "url": self._page.url, "title": self._page.title()}
+            return {"ok": True, "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -190,6 +343,8 @@ class BrowserTool:
                 "title": self._page.title(),
                 "text": body[:max_chars],
                 "truncated": len(body) > max_chars,
+                "browser_name": self._current_browser_name,
+                "engine": self._current_engine,
             }
         except Exception as e:
             return {"ok": False, "error": str(e)}
@@ -213,7 +368,7 @@ class BrowserTool:
             except Exception:
                 pass
             locator.click(force=force)
-            return {"ok": True, "action": "click", "selector": selector, "force": force, "url": self._page.url}
+            return {"ok": True, "action": "click", "selector": selector, "force": force, "url": self._page.url, "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             diagnostics = self._locator_diagnostics(selector)
             return {
@@ -234,7 +389,7 @@ class BrowserTool:
         try:
             assert self._page is not None
             self._page.locator(selector).first.fill(text)
-            return {"ok": True, "action": "fill", "selector": selector, "text_length": len(text), "url": self._page.url}
+            return {"ok": True, "action": "fill", "selector": selector, "text_length": len(text), "url": self._page.url, "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -247,7 +402,7 @@ class BrowserTool:
         try:
             assert self._page is not None
             self._page.locator(selector).first.press(key)
-            return {"ok": True, "action": "press", "selector": selector, "key": key, "url": self._page.url}
+            return {"ok": True, "action": "press", "selector": selector, "key": key, "url": self._page.url, "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -259,7 +414,7 @@ class BrowserTool:
             assert self._page is not None
             path = self._artifact_path(raw_path)
             self._page.screenshot(path=str(path), full_page=True)
-            return {"ok": True, "path": str(path), "url": self._page.url, "title": self._page.title()}
+            return {"ok": True, "path": str(path), "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -276,12 +431,16 @@ class BrowserTool:
             self._browser = None
             self._context = None
             self._page = None
+            self._current_browser_name = None
+            self._current_engine = None
             return {"ok": False, "error": str(e)}
 
         self._playwright = None
         self._browser = None
         self._context = None
         self._page = None
+        self._current_browser_name = None
+        self._current_engine = None
         return {"ok": True, "message": "Browser closed."}
 
 

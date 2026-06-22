@@ -20,6 +20,7 @@ class QuickActionsService:
                         {"say": "resume project", "does": "Reopen the remembered project flow using wrappers."},
                         {"say": "open readme", "does": "Open the README in VS Code if one exists."},
                         {"say": "show my project files", "does": "Open or preview the project folder contents."},
+                        {"say": "show my setup blockers", "does": "Show the main issues stopping tools from working right now."},
                     ],
                 },
                 {
@@ -27,9 +28,12 @@ class QuickActionsService:
                     "items": [
                         {"say": "set me up to work on this project", "does": "Open project tools like code, files, and terminal."},
                         {"say": "start coding", "does": "Open code and terminal flows for the current project."},
+                        {"say": "continue coding", "does": "Resume the last coding workspace and terminal context."},
                         {"say": "help me continue where I left off", "does": "Resume the remembered project flow."},
                         {"say": "show me what to do next", "does": "Suggest the next beginner-friendly actions."},
                         {"say": "show me today's focus", "does": "Show the most important thing to work on right now."},
+                        {"say": "show me today", "does": "Show a simple day brief with tasks, project, and browser context."},
+                        {"say": "show my progress", "does": "Show overall progress and recent activity."},
                         {"say": "start my workday", "does": "Get the workspace ready to work."},
                         {"say": "review this project", "does": "Inspect the project and show a quick README-based overview."},
                         {"say": "start coding", "does": "Open or prepare the project coding setup."},
@@ -61,7 +65,9 @@ class QuickActionsService:
                         {"say": "open browser to https://example.com", "does": "Open a specific URL."},
                         {"say": "search for local ai agents", "does": "Search the web."},
                         {"say": "research local ai agents", "does": "Search and capture a text snapshot."},
+                        {"say": "search this site for pricing", "does": "Search only within the current site you were viewing."},
                         {"say": "show me the current page", "does": "Resume the current or remembered browser page."},
+                        {"say": "show browser options", "does": "Show which installed browsers JARVIS can try to use."},
                     ],
                 },
                 {
@@ -111,7 +117,13 @@ class QuickActionsService:
         for item in suggestions:
             if item not in deduped:
                 deduped.append(item)
-        return {"ok": True, "items": deduped[:5]}
+        items = deduped[:5]
+        return {
+            "ok": True,
+            "items": items,
+            "plain_english": "These are the simplest next things you can ask JARVIS to do.",
+            "next_action": items[0] if items else None,
+        }
 
     def focus(self) -> dict[str, Any]:
         current = task_service.current_task()
@@ -121,17 +133,25 @@ class QuickActionsService:
         if current.get("ok"):
             headline = f"Current focus: {current.get('title')}"
             status = current.get("status")
+            plain = "You already have an active task in progress."
+            next_action = "complete current task"
         elif next_task.get("ok"):
             headline = f"Next focus: {next_task.get('title')}"
             status = next_task.get("status")
+            plain = "JARVIS found the next task you can start right now."
+            next_action = "work on next task"
         else:
             headline = "No active task focus found"
             status = None
+            plain = "There is no current task focus yet."
+            next_action = "start my workday"
 
         return {
             "ok": True,
             "headline": headline,
             "status": status,
+            "plain_english": plain,
+            "next_action": next_action,
             "current_task": current if current.get("ok") else None,
             "next_task": next_task if next_task.get("ok") else None,
             "project_path": project.get("path") if project.get("ok") else None,
@@ -144,15 +164,58 @@ class QuickActionsService:
         browser = app_wrapper_service.current_browser_context()
         sessions = memory_service.list_sessions(limit=3)
         tasks = task_service.task_summary()
+        next_steps = self.next_steps().get("items", [])
         return {
             "ok": True,
             "headline": focus.get("headline"),
+            "plain_english": "This is your simple day snapshot: current focus, project context, browser state, and what to do next.",
+            "next_action": next_steps[0] if next_steps else None,
             "focus": focus,
             "project": project if project.get("ok") else None,
             "browser": browser,
             "recent_sessions": sessions,
             "task_summary": tasks,
-            "next_steps": self.next_steps().get("items", []),
+            "next_steps": next_steps,
+        }
+
+    def progress(self) -> dict[str, Any]:
+        summary = task_service.task_summary()
+        recent_sessions = memory_service.list_sessions(limit=5)
+        browser = app_wrapper_service.current_browser_context()
+        project = app_wrapper_service.current_project_context(None)
+        next_steps = self.next_steps().get("items", [])
+        return {
+            "ok": True,
+            "plain_english": "This is your overall progress snapshot across tasks, sessions, project state, and browser state.",
+            "next_action": next_steps[0] if next_steps else None,
+            "task_summary": summary,
+            "recent_sessions": recent_sessions,
+            "browser": browser,
+            "project": project if project.get("ok") else None,
+            "next_steps": next_steps,
+        }
+
+    def setup_summary(self) -> dict[str, Any]:
+        doctor = app_wrapper_service.wrapper_doctor()
+        project = app_wrapper_service.current_project_context(None)
+        browser = app_wrapper_service.current_browser_context()
+        next_steps = self.next_steps().get("items", [])
+
+        blockers = []
+        for item in doctor.get("items", []):
+            if not item.get("ready"):
+                blockers.append({"name": item.get("name"), "notes": item.get("notes")})
+
+        plain = "Your setup looks usable." if not blockers else "JARVIS found a few setup blockers you may want to fix."
+        return {
+            "ok": True,
+            "plain_english": plain,
+            "next_action": next_steps[0] if next_steps else None,
+            "doctor": doctor,
+            "project": project if project.get("ok") else None,
+            "browser": browser,
+            "blockers": blockers,
+            "next_steps": next_steps,
         }
 
     def search(self, query: str) -> dict[str, Any]:
@@ -190,6 +253,8 @@ class QuickActionsService:
         next_steps = self.next_steps().get("items", [])
         return {
             "ok": True,
+            "plain_english": "Here is a simple summary of what you were recently doing and what to do next.",
+            "next_action": next_steps[0] if next_steps else None,
             "current_task": current if current.get("ok") else None,
             "next_task": next_task if next_task.get("ok") else None,
             "recent_sessions": sessions,

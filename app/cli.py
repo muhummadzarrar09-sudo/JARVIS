@@ -13,9 +13,11 @@ from app.services.app_wrapper_service import app_wrapper_service
 from app.services.audit import audit_service
 from app.services.memory import memory_service
 from app.services.operator_mode import operator_mode_service
+from app.services.progress_service import progress_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.task_service import task_service
 from app.services.tool_registry import tool_registry
+from app.services.validation_service import validation_service
 
 app = typer.Typer(help="JARVIS Local terminal interface")
 console = Console()
@@ -28,6 +30,11 @@ def _command_help_text() -> str:
         "  /help                 show this help\n"
         "  /status               show JARVIS dashboard\n"
         "  /today                show a simple day brief\n"
+        "  /progress             show a simple progress summary\n"
+        "  /setup                show a simple setup summary\n"
+        "  /phase4               show Phase 4 completion breakdown\n"
+        "  /browser              show browser status and available browser options\n"
+        "  /validate             show machine validation summary\n"
         "  /wrappers             show wrapper status\n"
         "  /recipes              show wrapper recipes\n"
         "  /projects             show current project context\n"
@@ -215,6 +222,9 @@ def _doctor_table() -> Table:
     items = doctor.get("items", []) if doctor.get("ok") else []
     for item in items:
         context = item.get("binary") or ((item.get("context") or {}).get("url") if isinstance(item.get("context"), dict) else "") or ""
+        if item.get("name") == "browser":
+            available = item.get("available_browsers", [])[:3]
+            context = ", ".join(candidate.get("name", "") for candidate in available) or context
         table.add_row(
             item.get("name", "?"),
             "yes" if item.get("ready") else "no",
@@ -224,6 +234,31 @@ def _doctor_table() -> Table:
     if not items:
         table.add_row("(unavailable)", "-", "-", doctor.get("error", "no diagnostics"))
     return table
+
+
+def _browser_panel() -> Panel:
+    context = app_wrapper_service.current_browser_context()
+    available = app_wrapper_service.wrapper_doctor("browser")
+    item = available.get("item") or {}
+    lines = []
+    if context.get("started"):
+        lines.append(f"Live page: {context.get('title') or context.get('url')}")
+        if context.get("url"):
+            lines.append(f"URL: {context.get('url')}")
+    elif context.get("remembered_url"):
+        lines.append(f"Remembered page: {context.get('remembered_url')}")
+    else:
+        lines.append(context.get("plain_english") or "No browser info available.")
+    if context.get("next_action"):
+        lines.append(f"Next: {context.get('next_action')}")
+    pref = context.get("preference") or item.get("preference") or []
+    if pref:
+        lines.append(f"Preference: {', '.join(pref)}")
+    candidates = context.get("available_browsers") or item.get("available_browsers") or []
+    if candidates:
+        lines.append("Available options:")
+        lines.extend(f"• {cand.get('name')} ({cand.get('engine')})" for cand in candidates[:5])
+    return Panel.fit("\n".join(lines), title="Browser", border_style="bright_cyan")
 
 
 def _replay_table(session_id: str, limit: int = 10) -> Table:
@@ -290,11 +325,72 @@ def _today_panel() -> Panel:
     return Panel.fit("\n".join(lines), title="Today Brief", border_style="bright_cyan")
 
 
+def _progress_panel() -> Panel:
+    progress = quick_actions_service.progress()
+    if not progress.get("ok"):
+        return Panel.fit("No progress summary available.", title="Progress", border_style="yellow")
+    lines = []
+    task_summary = progress.get("task_summary", {})
+    if task_summary:
+        lines.append(f"Tasks — open: {task_summary.get('open', 0)}, in progress: {task_summary.get('in_progress', 0)}, done: {task_summary.get('done', 0)}")
+    project = progress.get("project") or {}
+    if project.get("path"):
+        lines.append(f"Project: {project.get('path')}")
+    browser = progress.get("browser") or {}
+    if browser.get("started"):
+        lines.append(f"Browser page: {browser.get('title') or browser.get('url')}")
+    elif browser.get("remembered_url"):
+        lines.append(f"Remembered page: {browser.get('remembered_url')}")
+    sessions = progress.get("recent_sessions") or []
+    if sessions:
+        lines.append(f"Recent sessions: {len(sessions)}")
+    next_steps = progress.get("next_steps") or []
+    if next_steps:
+        lines.append("")
+        lines.append("Try next:")
+        lines.extend(f"• {item}" for item in next_steps[:4])
+    return Panel.fit("\n".join(lines), title="Progress", border_style="bright_blue")
+
+
+def _phase4_panel() -> Panel:
+    phase = progress_service.phase4_status()
+    if not phase.get("ok"):
+        return Panel.fit("No Phase 4 progress available.", title="Phase 4", border_style="yellow")
+    lines = [phase.get("plain_english", "Phase 4 status unavailable."), ""]
+    for section in phase.get("sections", []):
+        lines.append(f"{section.get('name')}: {section.get('completed')}/{section.get('total')} ({section.get('percent')}%)")
+    if phase.get("remaining"):
+        lines.append("")
+        lines.append("Left to finish:")
+        lines.extend(f"• {item}" for item in phase.get("remaining", [])[:8])
+    return Panel.fit("\n".join(lines), title="Phase 4 Status", border_style="bright_yellow")
+
+
+def _validation_panel() -> Panel:
+    report = validation_service.report()
+    if not report.get("ok"):
+        return Panel.fit("Validation report unavailable.", title="Validation", border_style="yellow")
+    lines = [report.get("plain_english") or "Validation", f"Platform: {report.get('platform')}", f"Python: {report.get('python_version')}"]
+    blockers = report.get("blockers") or []
+    if blockers:
+        lines.append("")
+        lines.append("Blockers:")
+        lines.extend(f"• {item}" for item in blockers[:6])
+    next_steps = report.get("next_steps") or []
+    if next_steps:
+        lines.append("")
+        lines.append("Next:")
+        lines.extend(f"• {item}" for item in next_steps[:4])
+    return Panel.fit("\n".join(lines), title="Validation Report", border_style="bright_red")
+
+
 def _focus_panel() -> Panel:
     focus = quick_actions_service.focus()
     if not focus.get("ok"):
         return Panel.fit("No current focus available.", title="Current Focus", border_style="yellow")
     lines = [focus.get("headline", "Current Focus")]
+    if focus.get("plain_english"):
+        lines.append(focus.get("plain_english"))
     if focus.get("project_path"):
         lines.append(f"Project: {focus.get('project_path')}")
     recs = focus.get("recommended", [])[:4]
@@ -303,6 +399,22 @@ def _focus_panel() -> Panel:
         lines.append("Try next:")
         lines.extend(f"• {item}" for item in recs)
     return Panel.fit("\n".join(lines), title="Current Focus", border_style="bright_magenta")
+
+
+def _setup_panel() -> Panel:
+    setup = quick_actions_service.setup_summary()
+    if not setup.get("ok"):
+        return Panel.fit("No setup summary available.", title="Setup", border_style="yellow")
+    lines = [setup.get("plain_english") or "Setup Summary"]
+    blockers = setup.get("blockers") or []
+    if blockers:
+        lines.append("")
+        lines.append("Blockers:")
+        lines.extend(f"• {item.get('name')}: {item.get('notes')}" for item in blockers[:5])
+    if setup.get("next_action"):
+        lines.append("")
+        lines.append(f"Next: {setup.get('next_action')}")
+    return Panel.fit("\n".join(lines), title="Setup Summary", border_style="bright_yellow")
 
 
 def _starter_panel() -> Panel:
@@ -401,7 +513,7 @@ def _print_banner(session_id: str) -> None:
         )
     )
     _print_dashboard(session_id)
-    console.print("[dim]Tip: use /starter, /today, /next, /focus, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /tasks, /sessions, or /tools for console panels.[/dim]")
+    console.print("[dim]Tip: use /starter, /today, /progress, /setup, /phase4, /next, /focus, /browser, /validate, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /tasks, /sessions, or /tools for console panels.[/dim]")
 
 
 def _approve_if_needed(user_input: str) -> bool:
@@ -466,6 +578,21 @@ def repl(session_id: Optional[str] = None) -> None:
         if user_input == "/today":
             console.print(_today_panel())
             continue
+        if user_input == "/progress":
+            console.print(_progress_panel())
+            continue
+        if user_input == "/setup":
+            console.print(_setup_panel())
+            continue
+        if user_input == "/phase4":
+            console.print(_phase4_panel())
+            continue
+        if user_input == "/browser":
+            console.print(_browser_panel())
+            continue
+        if user_input == "/validate":
+            console.print(_validation_panel())
+            continue
         if user_input == "/wrappers":
             console.print(_wrapper_status_table())
             continue
@@ -508,7 +635,7 @@ def repl(session_id: Optional[str] = None) -> None:
         if user_input == "/sessions":
             console.print(_sessions_table(current_session_id=sid, limit=12))
             continue
-        if user_input in {"/resume", "resume last session", "switch to last session"}:
+        if user_input in {"/resume", "resume last session", "switch to last session", "open my last session", "continue my last session"}:
             sessions = memory_service.list_sessions(limit=3)
             target = next((item.get("session_id") for item in sessions if item.get("session_id") != sid), None)
             if target:
@@ -518,8 +645,13 @@ def repl(session_id: Optional[str] = None) -> None:
             else:
                 console.print("[yellow]No other recent session to resume.[/yellow]")
             continue
-        if user_input.startswith("/use ") or lowered_input.startswith("switch to session "):
-            candidate = user_input[5:].strip() if user_input.startswith("/use ") else user_input[len("switch to session "):].strip()
+        if user_input.startswith("/use ") or lowered_input.startswith("switch to session ") or lowered_input.startswith("use session "):
+            if user_input.startswith("/use "):
+                candidate = user_input[5:].strip()
+            elif lowered_input.startswith("switch to session "):
+                candidate = user_input[len("switch to session "):].strip()
+            else:
+                candidate = user_input[len("use session "):].strip()
             resolved = None
             if candidate.isdigit():
                 index = int(candidate)

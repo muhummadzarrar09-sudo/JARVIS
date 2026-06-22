@@ -9,3 +9,4 @@ data/models/*.gguf
 data/browser/*.png
 data/desktop/*.png
 data/checkpoints/*.json
+data/validation/*.json

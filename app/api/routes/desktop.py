@@ -16,6 +16,9 @@ class DesktopActionRequest(BaseModel):
     path: str | None = None
     x: int | None = None
     y: int | None = None
+    handle: int | None = None
+    match_index: int = 0
+    preview: bool = False
     button: str = "left"
     exact: bool = False
 
@@ -24,6 +27,20 @@ class DesktopActionRequest(BaseModel):
 def desktop_windows() -> dict:
     result = desktop_tool.list_windows()
     audit_service.log_event("desktop_windows", {"result_ok": result.get("ok")})
+    return result
+
+
+@router.get("/find")
+def desktop_find(title: str, exact: bool = False) -> dict:
+    result = desktop_tool.find_windows(title=title, exact=exact)
+    audit_service.log_event("desktop_find", {"title": title, "exact": exact, "result_ok": result.get("ok")})
+    return result
+
+
+@router.get("/safety")
+def desktop_safety() -> dict:
+    result = desktop_tool.safety_status()
+    audit_service.log_event("desktop_safety", {"result_ok": result.get("ok")})
     return result
 
 
@@ -45,14 +62,37 @@ def desktop_screen() -> dict:
 def desktop_action(payload: DesktopActionRequest) -> dict:
     action = payload.action.strip().lower()
 
-    if action == "windows":
+    if payload.preview:
+        preview_payload = {
+            "title": payload.title,
+            "text": payload.text,
+            "key": payload.key,
+            "keys": payload.keys,
+            "path": payload.path,
+            "x": payload.x,
+            "y": payload.y,
+            "handle": payload.handle,
+            "match_index": payload.match_index,
+            "button": payload.button,
+            "exact": payload.exact,
+        }
+        result = desktop_tool.preview_action(action, preview_payload)
+    elif action == "windows":
         result = desktop_tool.list_windows()
+    elif action == "find":
+        result = desktop_tool.find_windows(payload.title or "", exact=payload.exact)
     elif action == "active":
         result = desktop_tool.active_window()
     elif action == "screen":
         result = desktop_tool.screen_info()
     elif action == "focus":
-        result = desktop_tool.focus_window(payload.title or "", exact=payload.exact)
+        result = desktop_tool.focus_window(payload.title or "", exact=payload.exact, match_index=payload.match_index)
+    elif action == "focus_handle":
+        result = desktop_tool.focus_handle(payload.handle or 0)
+    elif action == "undo_focus":
+        result = desktop_tool.undo_last_focus()
+    elif action == "safety":
+        result = desktop_tool.safety_status()
     elif action == "type":
         result = desktop_tool.type_text(payload.text or "")
     elif action == "press":

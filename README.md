@@ -135,6 +135,7 @@ Convenience scripts:
 .\scripts\install-browser.ps1
 .\scripts\install-desktop.ps1
 .\scripts\download-models.ps1
+.\scripts\validate-runtime.ps1
 ```
 
 Open:
@@ -161,12 +162,14 @@ This repo includes:
 - PowerShell bootstrap script
 
 ## Planning docs
+- `docs/MASTER_PLAN_STATUS.md` — single source of truth for status, phase completion, and next steps
 - `docs/ROADMAP_V1.md` — current roadmap + status, including desktop app timing
 - `docs/PHASE_PLAN.md` — high-level phase sequence
 - `docs/CONTROL_PHASES.md` — control/continuity extensions
 - `docs/DESKTOP_MODE.md` — desktop control starter commands
 - `docs/APP_WRAPPERS.md` — higher-level application wrappers and recipes
 - `docs/JARVIS_CONSOLE_UI.md` — terminal UI direction inspired by Claude Code, but JARVIS-specific
+- `docs/PHASE5_DESKTOP_SHELL_PLAN.md` — next-phase desktop shell plan
 - `docs/USAGE.md` — practical commands and examples
 
 ## Next recommended move

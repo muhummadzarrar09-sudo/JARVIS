@@ -364,7 +364,8 @@ $folders = @(
     "data\uploads",
     "data\browser",
     "data\desktop",
-    "data\checkpoints"
+    "data\checkpoints",
+    "data\validation"
 )
 
 foreach ($folder in $folders) {

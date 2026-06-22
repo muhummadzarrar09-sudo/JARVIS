@@ -16,8 +16,12 @@ Useful console panels:
 ```text
 /starter
 /today
+/progress
+/setup
+/phase4
 /next
 /focus
+/browser
 /status
 /wrappers
 /recipes
@@ -83,6 +87,11 @@ fs mkdir: notes/archive
 ### Install browser support
 ```powershell
 .\scripts\install-browser.ps1
+```
+
+Browser startup now tries installed browsers in preference order from `.env`:
+```env
+BROWSER_CHANNEL_PREFERENCE=chrome,msedge,brave,firefox,playwright_chromium
 ```
 
 ### Start browser
@@ -168,6 +177,7 @@ show my project
 show project overview
 review this project
 show my project files
+show my setup blockers
 what should i do next
 show me where to start
 show me today's focus
@@ -183,10 +193,16 @@ show my sessions
 show me recent work
 resume last session
 open browser
+open chrome
+open edge to https://example.com
+use chrome browser
+use default browser
 open browser to https://example.com
 search for local ai agents
+search this site for pricing
 research local ai agents
 show me the current page
+show browser options
 open code here
 open files here
 open terminal here
@@ -195,6 +211,7 @@ resume project
 resume browser
 resume code
 start coding
+continue coding
 take screenshot
 write note remember this idea
 start my workday

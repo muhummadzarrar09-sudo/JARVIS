@@ -274,6 +274,17 @@ class AppWrapperService:
             return preferred.strip().lower()
         return None
 
+    def _browser_title_hint(self, browser_name: str | None = None) -> str:
+        chosen = self._preferred_browser_name(browser_name) or "chrome"
+        mapping = {
+            "chrome": "Google Chrome",
+            "msedge": "Microsoft Edge",
+            "brave": "Brave",
+            "firefox": "Firefox",
+            "playwright_chromium": "Chromium",
+        }
+        return mapping.get(chosen, "Chrome")
+
     def _steps_ok(self, steps: list[dict[str, Any]]) -> bool:
         return all(step.get("result", {}).get("ok") for step in steps)
 
@@ -445,6 +456,27 @@ class AppWrapperService:
             "next_action": f"Open this link manually: {url}",
         }
 
+    def _detect_browser_windows(self) -> dict[str, Any]:
+        windows = desktop_tool.list_windows()
+        if not windows.get("ok"):
+            return {"ok": False, "items": [], "error": windows.get("error")}
+
+        signatures = {
+            "chrome": ["google chrome", "chrome"],
+            "msedge": ["microsoft edge", "edge"],
+            "brave": ["brave"],
+            "firefox": ["firefox"],
+        }
+        detected = []
+        for item in windows.get("items", []):
+            title = (item.get("title") or "").lower()
+            for browser_name, fragments in signatures.items():
+                if any(fragment in title for fragment in fragments):
+                    detected.append({**item, "browser_name": browser_name})
+                    break
+        active = next((item for item in detected if item.get("is_active")), None)
+        return {"ok": True, "items": detected, "active": active, "count": len(detected)}
+
     def _workspace_start_fallback(self, path: str, reason: str) -> dict[str, Any]:
         summary = self._project_summary(path)
         listing = file_tool.list_dir(path)
@@ -501,10 +533,21 @@ class AppWrapperService:
         preference = available.get("preference", []) if available.get("ok") else []
         candidates = available.get("items", []) if available.get("ok") else []
         preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name")
+        desktop_browser = self._detect_browser_windows()
         if not state.get("ok"):
             return state
         if not state.get("started"):
             remembered_url = remembered.get("last_url") or remembered.get("last_target")
+            active_browser = desktop_browser.get("active") if desktop_browser.get("ok") else None
+            active_title = active_browser.get("title") if active_browser else None
+            plain = "No live browser session is running right now."
+            next_action = "Say: open browser"
+            if active_title:
+                plain = "A browser window is already open, but it is not yet under JARVIS automation control."
+                next_action = "Say: open chrome, open edge, or show browser options"
+            elif remembered_url:
+                plain = "No live browser session is open, but JARVIS remembers your last page."
+                next_action = "Say: show me the current page or resume browser"
             return {
                 "ok": True,
                 "started": False,
@@ -515,8 +558,10 @@ class AppWrapperService:
                 "preferred_browser": preferred_browser,
                 "preference": preference,
                 "available_browsers": candidates,
-                "plain_english": "No live browser session is running right now." if not remembered_url else "No live browser session is open, but JARVIS remembers your last page.",
-                "next_action": "Say: open browser" if not remembered_url else "Say: show me the current page or resume browser",
+                "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
+                "active_browser_window": active_browser,
+                "plain_english": plain,
+                "next_action": next_action,
             }
         title = browser_tool.title()
         text = browser_tool.text_snapshot(max_chars=2000)
@@ -531,6 +576,8 @@ class AppWrapperService:
             "preferred_browser": preferred_browser,
             "preference": preference,
             "available_browsers": candidates,
+            "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
+            "active_browser_window": desktop_browser.get("active") if desktop_browser.get("ok") else None,
             "plain_english": "A browser session is currently available." if (title.get("ok") and text.get("ok")) else "A browser session is running, but some page details were unavailable.",
             "next_action": "Say: show me the current page, search for something, or browser text",
         }

@@ -249,6 +249,9 @@ def _browser_panel() -> Panel:
         lines.append(f"Remembered page: {context.get('remembered_url')}")
     else:
         lines.append(context.get("plain_english") or "No browser info available.")
+    active_window = context.get("active_browser_window") or {}
+    if active_window.get("title"):
+        lines.append(f"Active browser window: {active_window.get('title')}")
     if context.get("next_action"):
         lines.append(f"Next: {context.get('next_action')}")
     pref = context.get("preference") or item.get("preference") or []

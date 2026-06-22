@@ -8,3 +8,8 @@ router = APIRouter(prefix="/progress", tags=["progress"])
 @router.get("/phase4")
 def phase4() -> dict:
     return progress_service.phase4_status()
+
+
+@router.get("/phase5")
+def phase5() -> dict:
+    return progress_service.phase5_status()

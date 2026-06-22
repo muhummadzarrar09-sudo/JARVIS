@@ -42,6 +42,35 @@ class ProgressService:
                 ],
             },
         ]
+        self.phase5_sections = [
+            {
+                "name": "Shell foundation",
+                "items": [
+                    {"id": "shell_preview", "label": "Static shell preview", "done": True},
+                    {"id": "shell_live_route", "label": "Live web shell route", "done": True},
+                    {"id": "shell_live_panels", "label": "Live shell panels for progress/tasks/sessions/browser", "done": True},
+                    {"id": "shell_prompt", "label": "In-shell prompt posting to /chat", "done": True},
+                ],
+            },
+            {
+                "name": "Shell UX hardening",
+                "items": [
+                    {"id": "shell_validation", "label": "Validation panel in shell", "done": True},
+                    {"id": "shell_phase_visibility", "label": "Phase status visibility in shell", "done": True},
+                    {"id": "shell_task_actions", "label": "Task/session interaction in shell", "done": True},
+                    {"id": "shell_operator_modals", "label": "Approval modal / guard UX", "done": True},
+                ],
+            },
+            {
+                "name": "Desktop app transition",
+                "items": [
+                    {"id": "shell_packaging_plan", "label": "Desktop shell packaging plan", "done": True},
+                    {"id": "shell_local_validation", "label": "Runtime validation harness for Windows testing", "done": True},
+                    {"id": "shell_packaged_app", "label": "Actual packaged desktop app wrapper", "done": True},
+                    {"id": "shell_voice_orb", "label": "Voice / orb shell integration", "done": True},
+                ],
+            },
+        ]
 
     def phase4_status(self) -> dict[str, Any]:
         completed = 0
@@ -81,6 +110,47 @@ class ProgressService:
             "sections": sections,
             "remaining": remaining,
             "plain_english": f"Phase 4 is about {percent}% complete based on the current implementation checklist.",
+            "next_action": remaining[0] if remaining else None,
+        }
+
+    def phase5_status(self) -> dict[str, Any]:
+        completed = 0
+        total = 0
+        sections = []
+
+        for section in self.phase5_sections:
+            items = section["items"]
+            done_count = sum(1 for item in items if item["done"])
+            section_total = len(items)
+            completed += done_count
+            total += section_total
+            sections.append(
+                {
+                    "name": section["name"],
+                    "completed": done_count,
+                    "total": section_total,
+                    "percent": round((done_count / section_total) * 100, 1) if section_total else 0.0,
+                    "items": items,
+                }
+            )
+
+        percent = round((completed / total) * 100, 1) if total else 0.0
+        remaining = [
+            item["label"]
+            for section in self.phase5_sections
+            for item in section["items"]
+            if not item["done"]
+        ]
+        return {
+            "ok": True,
+            "phase": 5,
+            "name": "Desktop App Shell + Voice/UI",
+            "completed": completed,
+            "total": total,
+            "percent": percent,
+            "sections": sections,
+            "remaining": remaining,
+            "plain_english": f"Phase 5 is about {percent}% complete based on the current implementation checklist.",
             "next_action": remaining[0] if remaining else None,
         }
 

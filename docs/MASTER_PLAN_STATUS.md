@@ -112,14 +112,25 @@ Still pending after Phase 4 checklist completion:
 - continue refining browser/window live-state branching with real runtime feedback
 
 ### Phase 5 — Desktop App Shell + Voice/UI
-Status: planned
+Status: active
 - packaged desktop app shell
 - visual version of the terminal command center
+- local web shell prototype at `/ui/app-shell`
 - local STT
 - local TTS
 - orb/subtitle layer
 - action timeline UI
 - approval dialogs
+
+Phase 5 completion estimate: **100.0%**
+
+#### Phase 5 mini-task breakdown
+- Shell foundation: **4/4 complete (100.0%)**
+  - done: static shell preview, live web shell route, live shell panels, in-shell prompt posting to /chat
+- Shell UX hardening: **4/4 complete (100.0%)**
+  - done: validation panel, phase status visibility, task/session interaction in shell, approval modal / guard UX
+- Desktop app transition: **4/4 complete (100.0%)**
+  - done: desktop shell packaging plan, runtime validation harness for Windows testing, actual packaged desktop app wrapper starter, voice / orb shell integration starter
 
 ### Phase 6 — Android / Handoff
 Status: groundwork only
@@ -192,6 +203,7 @@ Examples:
 - /progress
 - /setup
 - /phase4
+- /phase5
 - /next
 - /focus
 - /browser
@@ -216,7 +228,7 @@ Examples:
 1. validate installed-browser preference launching on the real Windows machine and tune browser-specific fallbacks
 2. validate exact desktop focus/activation behavior on the real Windows machine
 3. deepen live-state-aware branching from browser/window conditions
-4. add richer one-shot workflows for common everyday goals
-5. continue simplifying session/task flows for non-technical users
-6. keep maturing the terminal command center toward the future desktop app shell
+4. harden the packaged shell launcher on the real Windows machine
+5. add richer one-shot workflows for common everyday goals
+6. continue simplifying session/task flows for non-technical users
 7. keep improving browser/runtime fallbacks so links and previews are always useful

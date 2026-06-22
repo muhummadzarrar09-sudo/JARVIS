@@ -19,6 +19,7 @@ Useful console panels:
 /progress
 /setup
 /phase4
+/phase5
 /next
 /focus
 /browser

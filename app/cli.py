@@ -33,6 +33,7 @@ def _command_help_text() -> str:
         "  /progress             show a simple progress summary\n"
         "  /setup                show a simple setup summary\n"
         "  /phase4               show Phase 4 completion breakdown\n"
+        "  /phase5               show Phase 5 completion breakdown\n"
         "  /browser              show browser status and available browser options\n"
         "  /validate             show machine validation summary\n"
         "  /wrappers             show wrapper status\n"
@@ -369,6 +370,20 @@ def _phase4_panel() -> Panel:
     return Panel.fit("\n".join(lines), title="Phase 4 Status", border_style="bright_yellow")
 
 
+def _phase5_panel() -> Panel:
+    phase = progress_service.phase5_status()
+    if not phase.get("ok"):
+        return Panel.fit("No Phase 5 progress available.", title="Phase 5", border_style="yellow")
+    lines = [phase.get("plain_english", "Phase 5 status unavailable."), ""]
+    for section in phase.get("sections", []):
+        lines.append(f"{section.get('name')}: {section.get('completed')}/{section.get('total')} ({section.get('percent')}%)")
+    if phase.get("remaining"):
+        lines.append("")
+        lines.append("Left to finish:")
+        lines.extend(f"• {item}" for item in phase.get("remaining", [])[:8])
+    return Panel.fit("\n".join(lines), title="Phase 5 Status", border_style="bright_green")
+
+
 def _validation_panel() -> Panel:
     report = validation_service.report()
     if not report.get("ok"):
@@ -516,7 +531,7 @@ def _print_banner(session_id: str) -> None:
         )
     )
     _print_dashboard(session_id)
-    console.print("[dim]Tip: use /starter, /today, /progress, /setup, /phase4, /next, /focus, /browser, /validate, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /tasks, /sessions, or /tools for console panels.[/dim]")
+    console.print("[dim]Tip: use /starter, /today, /progress, /setup, /phase4, /phase5, /next, /focus, /browser, /validate, /status, /wrappers, /recipes, /projects, /doctor, /timeline, /replay, /palette, /tasks, /sessions, or /tools for console panels.[/dim]")
 
 
 def _approve_if_needed(user_input: str) -> bool:
@@ -589,6 +604,9 @@ def repl(session_id: Optional[str] = None) -> None:
             continue
         if user_input == "/phase4":
             console.print(_phase4_panel())
+            continue
+        if user_input == "/phase5":
+            console.print(_phase5_panel())
             continue
         if user_input == "/browser":
             console.print(_browser_panel())

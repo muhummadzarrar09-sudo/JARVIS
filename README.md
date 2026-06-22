@@ -134,6 +134,8 @@ Convenience scripts:
 .\scripts\start-cli.ps1
 .\scripts\install-browser.ps1
 .\scripts\install-desktop.ps1
+.\scripts\install-shell.ps1
+.\scripts\start-shell.ps1
 .\scripts\download-models.ps1
 .\scripts\validate-runtime.ps1
 ```
@@ -141,6 +143,8 @@ Convenience scripts:
 Open:
 - API docs: http://127.0.0.1:8000/docs
 - health: http://127.0.0.1:8000/health
+- app shell prototype: http://127.0.0.1:8000/ui/app-shell
+- shell preview: http://127.0.0.1:8000/ui/shell-preview
 
 ## Current scaffold
 

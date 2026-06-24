@@ -834,18 +834,18 @@ def app_shell() -> str:
         const card = document.createElement('div');
         card.className = 'item';
         const lines = (section.items || []).slice(0, 6).map(item => `${item[section.key]} • ${((item.size_bytes || 0) / 1024).toFixed(1)} KB`);
-        card.innerHTML = `<strong>${section.title}</strong><div class='tiny'>${lines.length ? lines.join('\n') : 'none'}</div>`;
+        card.innerHTML = `<strong>${section.title}</strong><div class='tiny'>${lines.length ? lines.join('<br>') : 'none'}</div>`;
         root.appendChild(card);
       });
 
       const reconnectCard = document.createElement('div');
       reconnectCard.className = 'item';
-      reconnectCard.innerHTML = `<strong>Reconnect Timeline</strong><div class='tiny'>${reconnects.slice(0, 8).map(item => `${item.ts} • ${item.status} • ${item.detail}`).join('\n') || 'none'}</div>`;
+      reconnectCard.innerHTML = `<strong>Reconnect Timeline</strong><div class='tiny'>${reconnects.slice(0, 8).map(item => `${item.ts} • ${item.status} • ${item.detail}`).join('<br>') || 'none'}</div>`;
       root.appendChild(reconnectCard);
 
       const opsCard = document.createElement('div');
       opsCard.className = 'item';
-      opsCard.innerHTML = `<strong>Maintenance Results</strong><div class='tiny'>${ops.slice(0, 10).map(item => `${item.ts} • ${item.title} • ${String(item.detail).slice(0, 140)}`).join('\n') || 'none'}</div>`;
+      opsCard.innerHTML = `<strong>Maintenance Results</strong><div class='tiny'>${ops.slice(0, 10).map(item => `${item.ts} • ${item.title} • ${String(item.detail).slice(0, 140)}`).join('<br>') || 'none'}</div>`;
       root.appendChild(opsCard);
     }
 
@@ -1365,7 +1365,7 @@ def app_shell() -> str:
 
       let validationText = validation.plain_english || 'Validation unavailable.';
       if (validation.blockers?.length) validationText += `\nBlockers: ${validation.blockers.join(' | ')}`;
-      else validationText += '\nBlockers: none';
+      else validationText += '\\nBlockers: none';
       if (validation.next_steps?.length) validationText += `\nNext: ${validation.next_steps[0]}`;
       setText('validationBlock', validationText);
 

@@ -258,11 +258,13 @@ class AppWrapperService:
 
         try:
             resolved = self._resolve_workspace_path(candidate)
-            if resolved.exists() and resolved.is_file():
+            if not resolved.exists():
+                return "."
+            if resolved.is_file():
                 return str(resolved.parent)
             return str(resolved)
         except Exception:
-            return candidate
+            return "."
 
     def _preferred_browser_name(self, explicit: str | None = None) -> str | None:
         cleaned = (explicit or "").strip().lower()

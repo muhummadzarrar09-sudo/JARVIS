@@ -5,11 +5,12 @@ from app.services.audit import audit_service
 from app.services.database_service import database_service
 from app.services.model_service import model_service
 from app.services.recovery_service import recovery_service
-from app.services.validation_service import validation_service
 
 
 class MaintenanceService:
     def doctor(self) -> dict[str, Any]:
+        from app.services.validation_service import validation_service
+
         validation = validation_service.report()
         database = database_service.status()
         audit = audit_service.status()

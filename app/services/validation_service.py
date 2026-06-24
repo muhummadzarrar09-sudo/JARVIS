@@ -14,7 +14,6 @@ from app.services.desktop_tool import desktop_tool
 from app.services.progress_service import progress_service
 from app.services.model_service import model_service
 from app.services.recovery_service import recovery_service
-from app.services.maintenance_service import maintenance_service
 
 
 class ValidationService:
@@ -29,7 +28,6 @@ class ValidationService:
         database_status = database_service.status()
         audit_status = audit_service.status()
         recovery_packs = recovery_service.list_packs(limit=12)
-        maintenance_doctor = maintenance_service.doctor()
         phase4 = progress_service.phase4_status()
         phase5 = progress_service.phase5_status()
 
@@ -108,7 +106,6 @@ class ValidationService:
             "database_status": database_status,
             "audit_status": audit_status,
             "recovery_packs": recovery_packs,
-            "maintenance_doctor": maintenance_doctor,
             "app_security": app_security,
             "shell_launcher": shell_launcher,
             "phase4": phase4,

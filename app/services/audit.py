@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +12,31 @@ class AuditService:
         self.path: Path = settings.audit_log_path
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
+    def _archive_dir(self) -> Path:
+        path = self.path.parent / "archive"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _truncate(self, value: Any) -> Any:
+        max_chars = settings.audit_max_field_chars
+        max_items = settings.audit_max_collection_items
+
+        if isinstance(value, str):
+            return value[:max_chars]
+        if isinstance(value, dict):
+            items = list(value.items())[:max_items]
+            return {str(k): self._truncate(v) for k, v in items}
+        if isinstance(value, list):
+            return [self._truncate(item) for item in value[:max_items]]
+        if isinstance(value, tuple):
+            return [self._truncate(item) for item in list(value)[:max_items]]
+        return value
+
     def log_event(self, event_type: str, payload: dict[str, Any]) -> None:
         record = {
             "ts": datetime.now(UTC).isoformat(),
-            "event_type": event_type,
-            "payload": payload,
+            "event_type": str(event_type)[:120],
+            "payload": self._truncate(payload or {}),
         }
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -24,8 +44,152 @@ class AuditService:
     def _all_items(self) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
-        return [json.loads(line) for line in lines if line.strip()]
+        items: list[dict[str, Any]] = []
+        for line in self.path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                loaded = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(loaded, dict):
+                items.append(loaded)
+        return items
+
+    def _archive_items(self) -> list[Path]:
+        items = [p for p in self._archive_dir().iterdir() if p.is_file() and p.suffix.lower() == ".jsonl"]
+        items.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return items
+
+    def _resolve_archive_path(self, raw_path: str) -> Path:
+        base = self._archive_dir().resolve()
+        candidate = Path(raw_path)
+        resolved = candidate.resolve() if candidate.is_absolute() else (base / candidate.name).resolve()
+        try:
+            resolved.relative_to(base)
+        except ValueError as e:
+            raise ValueError(f"Archive path escapes archive directory: {raw_path}") from e
+        return resolved
+
+    def resolve_archive_path(self, raw_path: str) -> Path:
+        return self._resolve_archive_path(raw_path)
+
+    def status(self) -> dict[str, Any]:
+        exists = self.path.exists()
+        line_count = 0
+        size_bytes = 0
+        if exists:
+            size_bytes = self.path.stat().st_size
+            try:
+                line_count = len([line for line in self.path.read_text(encoding="utf-8").splitlines() if line.strip()])
+            except Exception:
+                line_count = 0
+        archives = self._archive_items()
+        return {
+            "ok": True,
+            "path": str(self.path),
+            "exists": exists,
+            "size_bytes": size_bytes,
+            "line_count": line_count,
+            "archive_count": len(archives),
+            "latest_archive": str(archives[0]) if archives else None,
+            "plain_english": "This is the current audit log status for JARVIS.",
+            "next_action": "Rotate the audit log if it grows too large." if exists and size_bytes > 2_000_000 else None,
+        }
+
+    def list_archives(self, limit: int = 20) -> dict[str, Any]:
+        items = []
+        for path in self._archive_items()[:limit]:
+            items.append(
+                {
+                    "name": path.name,
+                    "path": str(path),
+                    "size_bytes": path.stat().st_size,
+                    "modified_at": datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat(),
+                }
+            )
+        return {"ok": True, "count": len(items), "items": items}
+
+    def delete_archive(self, archive_path: str) -> dict[str, Any]:
+        try:
+            path = self._resolve_archive_path(archive_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if not path.exists() or not path.is_file():
+            return {"ok": False, "error": f"Archive file not found: {path}"}
+        path.unlink(missing_ok=True)
+        return {
+            "ok": True,
+            "deleted": True,
+            "path": str(path),
+            "plain_english": "JARVIS deleted the selected audit archive.",
+        }
+
+    def preview_archive(self, archive_path: str, limit: int = 20) -> dict[str, Any]:
+        try:
+            path = self._resolve_archive_path(archive_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if not path.exists() or not path.is_file():
+            return {"ok": False, "error": f"Archive file not found: {path}"}
+        items: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                loaded = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(loaded, dict):
+                items.append(loaded)
+        return {
+            "ok": True,
+            "path": str(path),
+            "count": min(limit, len(items)),
+            "items": items[-limit:],
+        }
+
+    def rotate(self, label: str | None = None, keep_archives: int = 10) -> dict[str, Any]:
+        if not self.path.exists() or self.path.stat().st_size == 0:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.touch(exist_ok=True)
+            return {
+                "ok": True,
+                "rotated": False,
+                "plain_english": "Audit log was already empty, so JARVIS only ensured the file exists.",
+            }
+
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        safe_label = ""
+        if label and label.strip():
+            safe_label = "-" + "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in label.strip())[:40]
+        archive_path = self._archive_dir() / f"audit-{stamp}{safe_label}.jsonl"
+        self.path.replace(archive_path)
+        self.path.touch(exist_ok=True)
+        prune_result = self.prune_archives(keep=keep_archives)
+        return {
+            "ok": True,
+            "rotated": True,
+            "archive_path": str(archive_path),
+            "prune_result": prune_result,
+            "plain_english": "JARVIS rotated the active audit log into the archive folder.",
+            "next_action": None,
+        }
+
+    def prune_archives(self, keep: int = 10) -> dict[str, Any]:
+        keep = max(0, keep)
+        archives = self._archive_items()
+        removed = []
+        for path in archives[keep:]:
+            removed.append(str(path))
+            path.unlink(missing_ok=True)
+        return {
+            "ok": True,
+            "kept": min(keep, len(archives)),
+            "removed_count": len(removed),
+            "removed": removed,
+            "plain_english": "JARVIS pruned old archived audit logs.",
+        }
 
     def recent(
         self,
@@ -36,6 +200,15 @@ class AuditService:
         items = self._all_items()
         if event_type:
             items = [item for item in items if item.get("event_type") == event_type]
+        if session_id:
+            items = [item for item in items if item.get("payload", {}).get("session_id") == session_id]
+        return items[-limit:]
+
+    def recent_by_types(self, event_types: list[str], limit: int = 20, session_id: str | None = None) -> list[dict[str, Any]]:
+        wanted = {item for item in event_types if item}
+        items = self._all_items()
+        if wanted:
+            items = [item for item in items if item.get("event_type") in wanted]
         if session_id:
             items = [item for item in items if item.get("payload", {}).get("session_id") == session_id]
         return items[-limit:]

@@ -243,7 +243,8 @@ app project: .
 ```
 
 ### Safety / operator flow
-High-risk commands now ask for confirmation in the terminal UI. Type `YES` when prompted.
+High-risk commands now ask for confirmation in the shell UI before execution.
+There is also a server-side confirmation gate on `/chat`, so direct API calls cannot silently bypass the approval step for high-risk commands.
 
 ### Open, ensure, or reset higher-level wrappers
 ```text
@@ -352,17 +353,45 @@ session list
 session overview
 ```
 
-## Switching from mock mode to real GGUF inference
+## Switching between mock mode and real GGUF inference
 
-Open `.env` and set:
+### Easiest way
+```powershell
+.\scripts\use-local-models.ps1
+.\scripts\use-mock-models.ps1
+```
+
+### Natural-language commands
+```text
+show model status
+use local models
+use mock mode
+```
+
+### Model API / preload
+```text
+POST /models/preload?slot=fast
+POST /models/preload?slot=main
+```
+
+### Manual `.env` mode
+```env
+DEFAULT_MODEL_PROVIDER=auto
+```
+
+`auto` will use local GGUF models when `llama-cpp-python` is available and a model is found in `data/models`, then fall back safely to mock mode if not.
+
+You can still force direct llama.cpp mode if you want:
 ```env
 DEFAULT_MODEL_PROVIDER=llama_cpp
 ```
 
-Make sure your GGUF file names match:
+Optional llama runtime tuning:
 ```env
-DEFAULT_FAST_MODEL=Qwen2.5-3B-Instruct-Q4_K_M.gguf
-DEFAULT_MAIN_MODEL=Qwen2.5-7B-Instruct-Q4_K_M.gguf
+LLAMA_N_CTX=4096
+LLAMA_N_THREADS=0
+LLAMA_N_GPU_LAYERS=0
+LLAMA_MAX_TOKENS=384
 ```
 
 ## Notes
@@ -371,3 +400,100 @@ DEFAULT_MAIN_MODEL=Qwen2.5-7B-Instruct-Q4_K_M.gguf
 - workspace_root is restricted so file operations stay inside the project scope
 - browser mode is currently single-session and Chromium-based
 - if browser start fails, run `python -m playwright install chromium` inside the venv
+
+## Database maintenance
+
+### API
+```text
+GET /database/status
+GET /database/backups
+GET /database/backup-file
+POST /database/backup
+POST /database/backup-delete
+POST /database/restore
+POST /database/vacuum
+```
+
+### PowerShell
+```powershell
+.\scripts\backup-db.ps1 -Label before-upgrade
+.\scripts\restore-db.ps1 -BackupPath data/backups/<backup-file>.sqlite3
+.\scripts\vacuum-db.ps1
+.\scripts\rotate-audit.ps1 -Label maintenance
+.\scripts\prune-audit.ps1 -KeepArchives 10
+```
+
+## Shell launcher diagnostics
+```powershell
+.\scripts\start-shell.ps1 -PrintDiagnostics
+.\scripts\start-shell.ps1 -BrowserOnly
+.\scripts\start-shell.ps1 -PrintDiagnostics -OpenRecoveryOnFailure -RetryCount 12 -RetryDelay 1.5
+```
+
+## Audit maintenance
+
+### API
+```text
+GET /audit/status
+GET /audit/archives
+GET /audit/archive-preview
+GET /audit/archive-file
+POST /audit/archive-delete
+POST /audit/rotate
+POST /audit/prune
+```
+
+### PowerShell
+```powershell
+.\scripts\rotate-audit.ps1 -Label maintenance
+.\scripts\prune-audit.ps1 -KeepArchives 10
+```
+
+## Session cleanup
+
+### API
+```text
+POST /sessions/cleanup
+```
+
+Example body:
+```json
+{
+  "keep_recent": 25,
+  "drop_empty_older_than_days": 7,
+  "drop_inactive_older_than_days": 90,
+  "dry_run": false
+}
+```
+
+## Recovery packs
+
+### API
+```text
+GET /maintenance/doctor
+GET /maintenance/history
+GET /maintenance/settings
+GET /maintenance/packs
+GET /maintenance/pack-preview
+GET /maintenance/pack-file
+POST /maintenance/settings
+POST /maintenance/pack-delete
+POST /maintenance/export-pack
+POST /maintenance/import-pack
+```
+
+### PowerShell
+```powershell
+.\scripts\export-recovery-pack.ps1 -Label before-major-change
+.\scripts\import-recovery-pack.ps1 -PackPath data/recovery/packs/<pack-file>.zip
+```
+
+## Session cleanup dry-run example
+```json
+{
+  "keep_recent": 25,
+  "drop_empty_older_than_days": 7,
+  "drop_inactive_older_than_days": 90,
+  "dry_run": true
+}
+```

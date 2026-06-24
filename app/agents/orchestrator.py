@@ -8,6 +8,8 @@ from app.services.desktop_tool import desktop_tool
 from app.services.file_tool import file_tool
 from app.services.llm_router import llm_router
 from app.services.memory import memory_service
+from app.services.model_service import model_service
+from app.services.operator_mode import operator_mode_service
 from app.services.process_tool import process_tool
 from app.services.progress_service import progress_service
 from app.services.quick_actions_service import quick_actions_service
@@ -79,6 +81,15 @@ class Orchestrator:
 
         if lowered in {"validate my machine", "validate my setup", "show validation report", "run validation"}:
             return "validation_report", "validation", validation_service.report()
+
+        if lowered in {"show model status", "model status", "which model are you using", "what model are you using", "show local models", "show gguf models"}:
+            return "model_status", "models", model_service.status()
+
+        if lowered in {"use local models", "use downloaded models", "use gguf models", "switch to local models", "switch to gguf models"}:
+            return "model_configure", "auto", model_service.configure_local_models()
+
+        if lowered in {"use mock mode", "use mock models", "switch to mock mode", "switch to mock models"}:
+            return "model_configure", "mock", model_service.configure_mock_mode()
 
         if lowered in {"how much is phase 4 done", "phase 4 status", "phase 4 progress", "what's left in phase 4", "whats left in phase 4"}:
             return "phase4_status", "phase4", progress_service.phase4_status()
@@ -339,6 +350,18 @@ class Orchestrator:
             raw_path, content = raw.split(":::", 1)
             result = file_tool.write_text(raw_path.strip(), content.lstrip(), append=append)
             return "fs_append" if append else "fs_write", raw_path.strip(), result
+
+        if lowered == "model status":
+            result = model_service.status()
+            return "model_status", "models", result
+
+        if lowered == "model use local":
+            result = model_service.configure_local_models()
+            return "model_configure", "auto", result
+
+        if lowered == "model use mock":
+            result = model_service.configure_mock_mode()
+            return "model_configure", "mock", result
 
         if lowered == "browser start":
             result = browser_tool.start()
@@ -709,6 +732,10 @@ class Orchestrator:
             summary = data.get("plain_english") or "Here is your validation report."
         elif tool_name == "phase4_status" and data.get("percent") is not None:
             summary = f"Phase 4 is {data.get('percent')}% complete."
+        elif tool_name == "model_status":
+            summary = data.get("plain_english") or "Here is your local model status."
+        elif tool_name == "model_configure":
+            summary = data.get("plain_english") or "JARVIS updated your model configuration."
         elif data.get("fallback") == "readme_preview":
             summary = "JARVIS showed a README preview instead of opening an app."
         elif data.get("fallback") == "directory_listing":
@@ -757,6 +784,10 @@ class Orchestrator:
             tip = "You can say: what task should i do next, show my sessions, or show me the current page."
         elif tool_name == "validation_report":
             tip = "Use this before testing wrappers on your real machine so you know what is missing."
+        elif tool_name == "model_status":
+            tip = "If local GGUF models are available, you can say: use local models. If you want the old behavior, say: use mock mode."
+        elif tool_name == "model_configure":
+            tip = "After changing model mode, restarting the API or shell is the safest way to ensure every process picks up the new settings."
         elif tool_name == "quick_setup":
             tip = "You can say: run doctor for technical details, or open readme / start coding to keep moving." 
         elif tool_name == "quick_focus":
@@ -801,7 +832,7 @@ class Orchestrator:
         lines.append(pretty)
         return "\n".join(lines)
 
-    def handle_chat(self, message: str, session_id: str | None, use_tools: bool = True) -> dict:
+    def handle_chat(self, message: str, session_id: str | None, use_tools: bool = True, confirmed: bool = False) -> dict:
         sid = memory_service.ensure_session(session_id)
         memory_service.add_message(sid, "user", message)
 
@@ -813,21 +844,41 @@ class Orchestrator:
         target = None
         tool_result = None
 
-        if use_tools:
-            tool_name, target, tool_result = self._handle_prefixed_tool(message, sid)
-            if tool_name:
-                audit_service.log_event(
-                    tool_name,
-                    {"session_id": sid, "target": target, "result": tool_result},
-                )
-                steps.append(f"executed_{tool_name}")
+        confirmation = None
+        requires_confirmation = False
 
-        if tool_name:
-            reply = self._format_tool_reply(tool_name, target, tool_result)
-            model_name = "tool_only"
-        else:
-            reply, model_name = llm_router.generate_reply(message, context)
-            steps.append(f"generated_reply_with_{model_name}")
+        if use_tools:
+            classification = operator_mode_service.classify_command(message)
+            if classification.get("requires_confirmation") and not confirmed:
+                requires_confirmation = True
+                confirmation = classification
+                reply = (
+                    f"Approval required before JARVIS will run this command.\n"
+                    f"Risk: {classification.get('risk')} ({classification.get('label')})\n"
+                    f"Reason: {classification.get('reason')}"
+                )
+                model_name = "confirmation_gate"
+                steps.append("confirmation_required")
+                audit_service.log_event(
+                    "confirmation_required",
+                    {"session_id": sid, "message": message, "classification": classification},
+                )
+            else:
+                tool_name, target, tool_result = self._handle_prefixed_tool(message, sid)
+                if tool_name:
+                    audit_service.log_event(
+                        tool_name,
+                        {"session_id": sid, "target": target, "result": tool_result},
+                    )
+                    steps.append(f"executed_{tool_name}")
+
+        if not requires_confirmation:
+            if tool_name:
+                reply = self._format_tool_reply(tool_name, target, tool_result)
+                model_name = "tool_only"
+            else:
+                reply, model_name = llm_router.generate_reply(message, context)
+                steps.append(f"generated_reply_with_{model_name}")
 
         memory_service.add_message(sid, "assistant", reply)
         audit_service.log_event(
@@ -838,6 +889,7 @@ class Orchestrator:
                 "reply_preview": reply[:300],
                 "steps": steps,
                 "model": model_name,
+                "requires_confirmation": requires_confirmation,
             },
         )
 
@@ -845,6 +897,8 @@ class Orchestrator:
             "session_id": sid,
             "reply": reply,
             "steps": steps,
+            "requires_confirmation": requires_confirmation,
+            "confirmation": confirmation,
         }
 
 

@@ -116,6 +116,7 @@ Status: active
 - packaged desktop app shell
 - visual version of the terminal command center
 - local web shell prototype at `/ui/app-shell`
+- local GGUF model status + provider switching
 - local STT
 - local TTS
 - orb/subtitle layer
@@ -225,10 +226,10 @@ Examples:
 - /do <goal>
 
 ## Immediate next sprint focus
-1. validate installed-browser preference launching on the real Windows machine and tune browser-specific fallbacks
-2. validate exact desktop focus/activation behavior on the real Windows machine
-3. deepen live-state-aware branching from browser/window conditions
-4. harden the packaged shell launcher on the real Windows machine
-5. add richer one-shot workflows for common everyday goals
-6. continue simplifying session/task flows for non-technical users
+1. validate the hardened shell send/receive path on the real Windows machine and capture any remaining prompt-delivery issues
+2. validate cached-shell recovery, startup diagnostics banner, maintenance drawer, maintenance previews, custom cleanup controls, and error drawer behavior on the real Windows machine
+3. run the expanded Windows validation matrix for Chrome / Edge / Brave / Firefox and capture real launch results
+4. validate desktop focus/undo behavior with the richer `focus_verification` diagnostics on the real Windows machine
+5. validate auto/local GGUF model selection plus `preload` / warm-start behavior on the real Windows machine
+6. validate database backup/restore/vacuum, session cleanup presets, recovery-pack export/import, and audit rotate/prune/archive-preview/delete flows over longer usage
 7. keep improving browser/runtime fallbacks so links and previews are always useful

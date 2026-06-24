@@ -1,4 +1,5 @@
 import platform
+import time
 from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
@@ -113,9 +114,12 @@ class DesktopTool:
             items.append(win)
         return items
 
+    def _normalize_title(self, text: str) -> str:
+        return " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in (text or "")).split())
+
     def _score_window_match(self, needle: str, current_title: str, exact: bool = False) -> float:
-        title_l = current_title.lower().strip()
-        needle_l = needle.lower().strip()
+        title_l = self._normalize_title(current_title)
+        needle_l = self._normalize_title(needle)
         if not needle_l:
             return 0.0
         if exact:
@@ -131,15 +135,77 @@ class DesktopTool:
             return 55.0
         return 0.0
 
+    def _titles_equivalent(self, expected: str, actual: str) -> bool:
+        expected_n = self._normalize_title(expected)
+        actual_n = self._normalize_title(actual)
+        if not expected_n or not actual_n:
+            return False
+        if expected_n == actual_n:
+            return True
+        if len(expected_n) >= 8 and expected_n in actual_n:
+            return True
+        if len(actual_n) >= 8 and actual_n in expected_n:
+            return True
+        return self._score_window_match(expected_n, actual_n, exact=False) >= 65.0 and self._score_window_match(actual_n, expected_n, exact=False) >= 65.0
+
     def _match_windows(self, title: str, exact: bool = False):
         scored = []
         for win in self._all_titled_windows():
             current_title = (win.title or "").strip()
             score = self._score_window_match(title, current_title, exact=exact)
             if score > 0:
-                scored.append((score, win))
-        scored.sort(key=lambda item: item[0], reverse=True)
-        return [win for _, win in scored]
+                priority = score
+                if getattr(win, "isActive", False):
+                    priority += 6.0
+                if not getattr(win, "isMinimized", False):
+                    priority += 2.0
+                scored.append((priority, score, win))
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [win for _, _, win in scored]
+
+    def _verify_focus(self, selected_window: dict[str, Any], attempts: int = 5, pause_seconds: float = 0.15) -> dict[str, Any]:
+        checks = []
+        selected_handle = selected_window.get("handle")
+        selected_title = selected_window.get("title") or ""
+
+        for attempt in range(1, attempts + 1):
+            active = self.active_window()
+            active_window = active.get("window") if active.get("ok") else None
+            verified_by = None
+
+            if active_window:
+                active_handle = active_window.get("handle")
+                active_title = active_window.get("title") or ""
+                if selected_handle is not None and active_handle == selected_handle:
+                    verified_by = "handle"
+                elif self._titles_equivalent(selected_title, active_title):
+                    verified_by = "title"
+
+            checks.append({
+                "attempt": attempt,
+                "active_window": active_window,
+                "verified_by": verified_by,
+            })
+
+            if verified_by:
+                return {
+                    "ok": True,
+                    "verified_by": verified_by,
+                    "attempt_count": attempt,
+                    "checks": checks,
+                    "final_active_window": active_window,
+                }
+
+            if attempt < attempts:
+                time.sleep(pause_seconds)
+
+        return {
+            "ok": False,
+            "verified_by": None,
+            "attempt_count": attempts,
+            "checks": checks,
+            "final_active_window": checks[-1].get("active_window") if checks else None,
+        }
 
     def _find_window_by_handle(self, handle: int):
         for win in self._all_titled_windows():
@@ -302,14 +368,10 @@ class DesktopTool:
                 except Exception as e2:
                     activation_attempts.append(f"fallback_failed: {e2}")
 
-            active = self.active_window()
             selected = self._window_to_dict(win)
-            focused = (active.get("window") or {})
-            focused_handle = focused.get("handle")
-            success = focused_handle is not None and focused_handle == selected.get("handle")
-            if not success:
-                focused_title = focused.get("title")
-                success = focused_title is not None and focused_title.lower() == selected["title"].lower()
+            verification = self._verify_focus(selected)
+            success = verification.get("ok", False)
+            active_after = verification.get("final_active_window")
 
             if success:
                 self._record_focus_history(previous_window=previous, next_window=selected)
@@ -326,9 +388,10 @@ class DesktopTool:
                     "other_matches": [self._window_to_dict(m)["title"] for m in matches[1:6]],
                     "restore_attempted": restore_attempted,
                     "activation_attempts": activation_attempts,
-                    "active_window_after": active.get("window") if active.get("ok") else None,
+                    "focus_verification": verification,
+                    "active_window_after": active_after,
                     "exact": exact,
-                    "error": None if success else "A matching window was found but focus could not be verified.",
+                    "error": None if success else "A matching window was found but focus could not be verified after multiple checks.",
                 },
             )
         except Exception as e:
@@ -350,9 +413,9 @@ class DesktopTool:
             except Exception:
                 pass
             win.activate()
-            active = self.active_window()
             selected = self._window_to_dict(win)
-            success = ((active.get("window") or {}).get("handle") == selected.get("handle"))
+            verification = self._verify_focus(selected)
+            success = verification.get("ok", False)
             if success:
                 self._record_focus_history(previous_window=previous, next_window=selected)
             return self._with_guard(
@@ -361,8 +424,9 @@ class DesktopTool:
                     "ok": success,
                     "requested_handle": handle,
                     "selected_window": selected,
-                    "active_window_after": active.get("window") if active.get("ok") else None,
-                    "error": None if success else "Window handle was found but focus could not be verified.",
+                    "focus_verification": verification,
+                    "active_window_after": verification.get("final_active_window"),
+                    "error": None if success else "Window handle was found but focus could not be verified after multiple checks.",
                 },
             )
         except Exception as e:

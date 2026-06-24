@@ -195,7 +195,7 @@ function Ensure-ModelEnvDefaults([string]$EnvPath) {
     }
     $content = Get-Content $EnvPath -Raw
     if ($content -notmatch "DEFAULT_MODEL_PROVIDER") {
-        Add-Content -Path $EnvPath -Value "`r`nDEFAULT_MODEL_PROVIDER=mock`r`n"
+        Add-Content -Path $EnvPath -Value "`r`nDEFAULT_MODEL_PROVIDER=auto`r`n"
     }
 }
 
@@ -434,5 +434,5 @@ Write-Host "Next steps:" -ForegroundColor Green
 Write-Host "1. .\.venv\Scripts\Activate.ps1"
 Write-Host "2. .\scripts\start-cli.ps1"
 Write-Host "3. .\scripts\start-api.ps1"
-Write-Host "4. Keep DEFAULT_MODEL_PROVIDER=mock until CLI/API tests pass"
-Write-Host "5. Switch to DEFAULT_MODEL_PROVIDER=llama_cpp only after GGUF files exist and llama_cpp import succeeded"
+Write-Host "4. DEFAULT_MODEL_PROVIDER=auto will use local GGUF models when ready and fall back safely when needed"
+Write-Host "5. Use .\scripts\use-local-models.ps1 if you want to pin the downloaded GGUF models quickly"

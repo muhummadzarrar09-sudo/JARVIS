@@ -461,6 +461,7 @@ class AppWrapperService:
         if not windows.get("ok"):
             return {"ok": False, "items": [], "error": windows.get("error")}
 
+        preferred_browser = self._preferred_browser_name()
         signatures = {
             "chrome": ["google chrome", "chrome"],
             "msedge": ["microsoft edge", "edge"],
@@ -475,7 +476,18 @@ class AppWrapperService:
                     detected.append({**item, "browser_name": browser_name})
                     break
         active = next((item for item in detected if item.get("is_active")), None)
-        return {"ok": True, "items": detected, "active": active, "count": len(detected)}
+        preferred_window = next((item for item in detected if item.get("browser_name") == preferred_browser), None)
+        running_names = sorted({item.get("browser_name") for item in detected if item.get("browser_name")})
+        return {
+            "ok": True,
+            "items": detected,
+            "active": active,
+            "count": len(detected),
+            "running_browser_names": running_names,
+            "preferred_browser": preferred_browser,
+            "preferred_window": preferred_window,
+            "preferred_running": bool(preferred_window),
+        }
 
     def _workspace_start_fallback(self, path: str, reason: str) -> dict[str, Any]:
         summary = self._project_summary(path)
@@ -532,22 +544,41 @@ class AppWrapperService:
         available = browser_tool.available_browsers()
         preference = available.get("preference", []) if available.get("ok") else []
         candidates = available.get("items", []) if available.get("ok") else []
-        preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name")
+        default_candidate = available.get("default_candidate") if available.get("ok") else None
+        preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name") or ((default_candidate or {}).get("name"))
         desktop_browser = self._detect_browser_windows()
+        running_names = desktop_browser.get("running_browser_names", []) if desktop_browser.get("ok") else []
+        preferred_window = desktop_browser.get("preferred_window") if desktop_browser.get("ok") else None
+        preferred_running = bool(desktop_browser.get("preferred_running")) if desktop_browser.get("ok") else False
+        label_map = {
+            "chrome": "Chrome",
+            "msedge": "Edge",
+            "brave": "Brave",
+            "firefox": "Firefox",
+            "playwright_chromium": "Playwright Chromium",
+        }
+
         if not state.get("ok"):
             return state
+
         if not state.get("started"):
             remembered_url = remembered.get("last_url") or remembered.get("last_target")
             active_browser = desktop_browser.get("active") if desktop_browser.get("ok") else None
             active_title = active_browser.get("title") if active_browser else None
             plain = "No live browser session is running right now."
             next_action = "Say: open browser"
-            if active_title:
+
+            if active_title and preferred_running and preferred_browser:
+                plain = f"{label_map.get(preferred_browser, preferred_browser)} is already open, but it is not yet under JARVIS automation control."
+                short_name = "edge" if preferred_browser == "msedge" else preferred_browser
+                next_action = f"Say: open {short_name}"
+            elif active_title:
                 plain = "A browser window is already open, but it is not yet under JARVIS automation control."
                 next_action = "Say: open chrome, open edge, or show browser options"
             elif remembered_url:
                 plain = "No live browser session is open, but JARVIS remembers your last page."
                 next_action = "Say: show me the current page or resume browser"
+
             return {
                 "ok": True,
                 "started": False,
@@ -557,14 +588,20 @@ class AppWrapperService:
                 "remembered_url": remembered_url,
                 "preferred_browser": preferred_browser,
                 "preference": preference,
+                "default_candidate": default_candidate,
                 "available_browsers": candidates,
                 "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
                 "active_browser_window": active_browser,
+                "preferred_browser_window": preferred_window,
+                "running_browser_names": running_names,
+                "preferred_browser_running": preferred_running,
                 "plain_english": plain,
                 "next_action": next_action,
             }
+
         title = browser_tool.title()
         text = browser_tool.text_snapshot(max_chars=2000)
+        selected_browser = title.get("browser_name") or state.get("browser_name")
         return {
             "ok": bool(title.get("ok") and text.get("ok")),
             "started": True,
@@ -574,10 +611,15 @@ class AppWrapperService:
             "text_truncated": text.get("truncated"),
             "remembered_url": remembered.get("last_url") or remembered.get("last_target"),
             "preferred_browser": preferred_browser,
+            "selected_browser": selected_browser,
             "preference": preference,
+            "default_candidate": default_candidate,
             "available_browsers": candidates,
             "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
             "active_browser_window": desktop_browser.get("active") if desktop_browser.get("ok") else None,
+            "preferred_browser_window": preferred_window,
+            "running_browser_names": running_names,
+            "preferred_browser_running": preferred_running,
             "plain_english": "A browser session is currently available." if (title.get("ok") and text.get("ok")) else "A browser session is running, but some page details were unavailable.",
             "next_action": "Say: show me the current page, search for something, or browser text",
         }
@@ -636,10 +678,11 @@ class AppWrapperService:
                     {
                         "name": canonical,
                         "ready": playwright_installed,
-                        "notes": "Uses the first available browser from the configured preference list.",
+                        "notes": "Uses the preferred installed browser when possible, then falls back through the configured browser order.",
                         "playwright_installed": playwright_installed,
                         "available_browsers": available.get("items", []),
                         "preference": available.get("preference", []),
+                        "default_candidate": available.get("default_candidate"),
                         "status": tool_status.get("item"),
                         "context": browser_context,
                         "remembered_state": state,
@@ -710,23 +753,31 @@ class AppWrapperService:
         desktop_windows = desktop_tool.list_windows()
         active_window = desktop_tool.active_window()
         browser_state = browser_tool.state()
+        browser_windows = self._detect_browser_windows()
 
         items = []
         for canonical in wrappers:
             meta = self._wrappers[canonical]
-            title_hint = meta["title_hint"]
             state = wrapper_state_service.get_state(canonical)
-            matches = []
+            title_hint = meta["title_hint"]
+            matches: list[dict[str, Any]] = []
             active = False
             running = False
             extra: dict[str, Any] = {"remembered_state": state}
 
             if canonical == "browser":
+                title_hint = self._browser_title_hint(state.get("preferred_browser") or state.get("last_browser_name"))
                 running = bool(browser_state.get("started"))
-                if desktop_windows.get("ok"):
-                    matches = [item for item in desktop_windows.get("items", []) if self._match_title_hint(title_hint, item.get("title", ""))]
+                if browser_windows.get("ok"):
+                    matches = browser_windows.get("items", [])
                     running = running or bool(matches)
-                    active = any(item.get("is_active") for item in matches)
+                    active = browser_windows.get("active") is not None
+                    extra["browser_windows"] = matches[:5]
+                    extra["running_browser_names"] = browser_windows.get("running_browser_names", [])
+                    extra["preferred_browser"] = browser_windows.get("preferred_browser")
+                    extra["preferred_running"] = browser_windows.get("preferred_running")
+                else:
+                    extra["desktop_error"] = browser_windows.get("error")
                 extra["browser_state"] = browser_state if browser_state.get("ok") else None
             else:
                 if desktop_windows.get("ok"):
@@ -738,7 +789,11 @@ class AppWrapperService:
 
             if active_window.get("ok") and active_window.get("window"):
                 active_title = active_window.get("window", {}).get("title", "")
-                if self._match_title_hint(title_hint, active_title):
+                if canonical == "browser":
+                    if browser_windows.get("active"):
+                        active = True
+                        running = True
+                elif self._match_title_hint(title_hint, active_title):
                     active = True
                     running = True
 
@@ -770,13 +825,15 @@ class AppWrapperService:
             url = (target or "https://example.com").strip()
             chosen_browser = self._preferred_browser_name(browser_name)
             result = browser_tool.open_url(url, browser_name=chosen_browser)
-            self._remember_wrapper(canonical, last_action="open", last_target=url, last_url=url, last_browser_name=chosen_browser, last_result_ok=result.get("ok"))
+            actual_browser = result.get("browser_name") or result.get("selected_browser") or chosen_browser
+            self._remember_wrapper(canonical, last_action="open", last_target=url, last_url=url, last_browser_name=actual_browser, last_result_ok=result.get("ok"))
             return {
                 "ok": result.get("ok", False),
                 "wrapper": canonical,
                 "target": url,
                 "mode": "playwright_managed",
-                "browser_name": chosen_browser,
+                "requested_browser": chosen_browser,
+                "browser_name": actual_browser,
                 "result": result,
             }
 
@@ -946,13 +1003,28 @@ class AppWrapperService:
         clean_url = url.strip()
         if not clean_url:
             return {"ok": False, "error": "URL is required."}
+        requested_browser = self._preferred_browser_name(browser_name)
         doctor = self.wrapper_doctor("browser")
         item = doctor.get("item") or {}
         if item and not item.get("ready"):
-            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.", browser_name=browser_name)
-            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=browser_name, last_result_ok=fallback.get("ok"))
+            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.", browser_name=requested_browser)
+            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_result_ok=fallback.get("ok"))
             return fallback
-        return self.open_app("browser", target=clean_url, browser_name=browser_name)
+
+        result = self.open_app("browser", target=clean_url, browser_name=requested_browser)
+        if result.get("ok"):
+            return result
+
+        nested = result.get("result") if isinstance(result.get("result"), dict) else {}
+        reason = nested.get("error") or result.get("error") or "Browser automation could not open the page here."
+        fallback = self._browser_link_fallback(
+            clean_url,
+            f"Browser automation could not launch a controllable browser session here ({reason}).",
+            browser_name=requested_browser,
+        )
+        fallback["launch_result"] = result
+        self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_result_ok=fallback.get("ok"))
+        return fallback
 
     def run_recipe(self, name: str, target: str | None = None, text: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_recipe(name)

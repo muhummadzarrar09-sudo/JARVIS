@@ -2,8 +2,13 @@ from typing import Any
 
 from app.services.app_wrapper_service import app_wrapper_service
 from app.services.audit import audit_service
+from app.services.database_service import database_service
 from app.services.memory import memory_service
+from app.services.model_service import model_service
 from app.services.progress_service import progress_service
+from app.services.recovery_service import recovery_service
+from app.services.maintenance_service import maintenance_service
+from app.services.maintenance_settings_service import maintenance_settings_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.task_service import task_service
 from app.services.validation_service import validation_service
@@ -22,6 +27,17 @@ class ShellStateService:
             resolved_session_id = sessions[0]["session_id"] if sessions else None
             session = memory_service.session_overview(resolved_session_id) if resolved_session_id else {"ok": False}
 
+        models_status = model_service.status()
+        database_status = database_service.status()
+        audit_status = audit_service.status()
+        audit_archives = audit_service.list_archives(limit=12)
+        database_backups = database_service.list_backups(limit=12)
+        database_history = audit_service.recent_by_types(["database_backup", "database_restore", "database_vacuum"], limit=12)
+        audit_history = audit_service.recent_by_types(["audit_rotate", "audit_prune"], limit=12)
+        session_history = audit_service.recent_by_types(["session_cleanup"], limit=12)
+        recovery_history = audit_service.recent_by_types(["maintenance_export_pack", "maintenance_import_pack", "maintenance_pack_preview"], limit=12)
+        maintenance_history_preview = maintenance_service.history(limit=30)
+
         return {
             "ok": True,
             "session_id": resolved_session_id,
@@ -31,6 +47,29 @@ class ShellStateService:
             "focus": quick_actions_service.focus(),
             "project": app_wrapper_service.current_project_context(None),
             "browser": app_wrapper_service.current_browser_context(),
+            "models": models_status,
+            "database": database_status,
+            "maintenance": {
+                "database_backups": database_backups,
+                "doctor": maintenance_service.doctor(),
+                "settings": maintenance_settings_service.get_settings(),
+                "history_preview": maintenance_history_preview,
+                "database_history": database_history,
+                "recovery_packs": recovery_service.list_packs(limit=12),
+                "recovery_history": recovery_history,
+                "audit_status": audit_status,
+                "audit_archives": audit_archives,
+                "audit_history": audit_history,
+                "session_history": session_history,
+                "summary": {
+                    "database_backup_count": database_status.get("backup_count"),
+                    "audit_archive_count": audit_status.get("archive_count"),
+                    "latest_database_event": database_history[-1] if database_history else None,
+                    "latest_audit_event": audit_history[-1] if audit_history else None,
+                    "latest_session_event": session_history[-1] if session_history else None,
+                    "latest_recovery_event": recovery_history[-1] if recovery_history else None,
+                },
+            },
             "wrapper_doctor": app_wrapper_service.wrapper_doctor(),
             "tasks": {
                 "summary": task_service.task_summary(),

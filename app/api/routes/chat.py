@@ -12,5 +12,6 @@ def chat(payload: ChatRequest) -> ChatResponse:
         message=payload.message,
         session_id=payload.session_id,
         use_tools=payload.use_tools,
+        confirmed=payload.confirmed,
     )
     return ChatResponse(**result)

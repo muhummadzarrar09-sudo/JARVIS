@@ -137,7 +137,26 @@ Convenience scripts:
 .\scripts\install-shell.ps1
 .\scripts\start-shell.ps1
 .\scripts\download-models.ps1
+.\scripts\use-local-models.ps1
+.\scripts\use-mock-models.ps1
+.\scripts\backup-db.ps1
+.\scripts\restore-db.ps1 -BackupPath data/backups/<backup-file>.sqlite3
+.\scripts\vacuum-db.ps1
+.\scripts\rotate-audit.ps1
+.\scripts\prune-audit.ps1
+.\scripts\export-recovery-pack.ps1
+.\scripts\import-recovery-pack.ps1 -PackPath data/recovery/packs/<pack-file>.zip
+.\scripts\delete-db-backup.ps1 -BackupPath data/backups/<backup-file>.sqlite3
+.\scripts\delete-audit-archive.ps1 -ArchivePath data/logs/archive/<archive-file>.jsonl
+.\scripts\delete-recovery-pack.ps1 -PackPath data/recovery/packs/<pack-file>.zip
 .\scripts\validate-runtime.ps1
+```
+
+Validation examples:
+```powershell
+.\scripts\validate-runtime.ps1 -AttemptBrowserStarts
+.\scripts\validate-runtime.ps1 -AttemptBrowserOpens -Browser chrome,msedge -BrowserUrl "https://example.com"
+.\scripts\validate-runtime.ps1 -FocusTitle "Visual Studio Code" -FocusMatchIndex 0
 ```
 
 Open:
@@ -145,6 +164,45 @@ Open:
 - health: http://127.0.0.1:8000/health
 - app shell prototype: http://127.0.0.1:8000/ui/app-shell
 - shell preview: http://127.0.0.1:8000/ui/shell-preview
+- model status: http://127.0.0.1:8000/models/status
+- database status: http://127.0.0.1:8000/database/status
+- audit status: http://127.0.0.1:8000/audit/status
+- recovery packs: http://127.0.0.1:8000/maintenance/packs
+- maintenance doctor: http://127.0.0.1:8000/maintenance/doctor
+- maintenance history: http://127.0.0.1:8000/maintenance/history
+- session cleanup: POST http://127.0.0.1:8000/sessions/cleanup
+
+Switch models quickly:
+```powershell
+.\scripts\use-local-models.ps1
+.\scripts\use-mock-models.ps1
+```
+
+Database maintenance:
+```powershell
+.\scripts\backup-db.ps1 -Label before-hardening
+.\scripts\restore-db.ps1 -BackupPath data/backups/<backup-file>.sqlite3
+.\scripts\vacuum-db.ps1
+.\scripts\rotate-audit.ps1 -Label cleanup
+.\scripts\prune-audit.ps1 -KeepArchives 10
+.\scripts\export-recovery-pack.ps1 -Label before-major-change
+.\scripts\import-recovery-pack.ps1 -PackPath data/recovery/packs/<pack-file>.zip
+```
+
+Shell diagnostics launcher:
+```powershell
+.\scripts\start-shell.ps1 -PrintDiagnostics
+.\scripts\start-shell.ps1 -BrowserOnly
+.\scripts\start-shell.ps1 -PrintDiagnostics -OpenRecoveryOnFailure -RetryCount 12 -RetryDelay 1.5
+```
+
+Local security/runtime defaults are configurable in `.env`:
+```env
+APP_ALLOWED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000,http://127.0.0.1,http://localhost,null
+APP_ALLOWED_HOSTS=127.0.0.1,localhost
+APP_REQUEST_MAX_BYTES=1048576
+MAX_CHAT_MESSAGE_CHARS=12000
+```
 
 ## Current scaffold
 

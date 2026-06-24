@@ -8,15 +8,15 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
 class TaskCreateRequest(BaseModel):
-    title: str = Field(..., min_length=1)
-    session_id: str | None = None
-    priority: str = Field(default="normal")
-    notes: str | None = None
+    title: str = Field(..., min_length=1, max_length=240)
+    session_id: str | None = Field(default=None, max_length=120)
+    priority: str = Field(default="normal", max_length=20)
+    notes: str | None = Field(default=None, max_length=2000)
 
 
 class TaskStatusRequest(BaseModel):
     task_id: int = Field(..., ge=1)
-    status: str = Field(..., min_length=1)
+    status: str = Field(..., min_length=1, max_length=32)
 
 
 @router.get("")

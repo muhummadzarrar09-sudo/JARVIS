@@ -80,6 +80,14 @@ class QuickActionsService:
                     ],
                 },
                 {
+                    "name": "Models",
+                    "items": [
+                        {"say": "show model status", "does": "Show which GGUF models JARVIS can see and whether local inference is ready."},
+                        {"say": "use local models", "does": "Configure JARVIS to prefer your downloaded GGUF models."},
+                        {"say": "use mock mode", "does": "Switch back to mock replies for non-tool chat."},
+                    ],
+                },
+                {
                     "name": "Desktop",
                     "items": [
                         {"say": "take screenshot", "does": "Capture a desktop screenshot."},

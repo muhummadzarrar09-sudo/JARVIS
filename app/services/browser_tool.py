@@ -1,6 +1,6 @@
 import os
 import shutil
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -46,6 +46,41 @@ class BrowserTool:
 
     def _windows(self) -> bool:
         return os.name == "nt"
+
+    def _display_name(self, name: str) -> str:
+        mapping = {
+            "chrome": "Google Chrome",
+            "msedge": "Microsoft Edge",
+            "brave": "Brave",
+            "firefox": "Firefox",
+            "chromium": "Chromium",
+            "playwright_chromium": "Playwright Chromium",
+        }
+        return mapping.get(name, name)
+
+    def _normalize_browser_name(self, raw: str | None) -> str | None:
+        name = (raw or "").strip().lower()
+        aliases = {
+            "": None,
+            "auto": None,
+            "default": None,
+            "system": None,
+            "edge": "msedge",
+            "playwright": "playwright_chromium",
+            "bundle": "playwright_chromium",
+        }
+        return aliases.get(name, name)
+
+    def _preference_list(self) -> list[str]:
+        items: list[str] = []
+        seen: set[str] = set()
+        for raw in settings.browser_channel_preference.split(","):
+            normalized = self._normalize_browser_name(raw)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            items.append(normalized)
+        return items
 
     def _candidate_from_path(self, name: str, engine: str, raw_path: str) -> dict[str, Any] | None:
         path = Path(raw_path)
@@ -116,12 +151,28 @@ class BrowserTool:
         return candidates
 
     def available_browsers(self) -> dict[str, Any]:
-        candidates = self._detect_candidates()
+        detected = self._detect_candidates()
+        preference = self._preference_list()
+        ordered = self._ordered_candidates()
+        default_candidate = ordered[0] if ordered else None
+        items = []
+        for candidate in detected:
+            name = candidate["name"]
+            item = {
+                **candidate,
+                "display_name": self._display_name(name),
+                "available": bool(candidate.get("executable_path")) or name == "playwright_chromium",
+                "is_fallback": name == "playwright_chromium",
+                "preference_rank": (preference.index(name) + 1) if name in preference else None,
+                "selected_by_default": bool(default_candidate and default_candidate.get("name") == name),
+            }
+            items.append(item)
         return {
             "ok": True,
-            "preference": [item.strip() for item in settings.browser_channel_preference.split(",") if item.strip()],
-            "items": candidates,
-            "count": len(candidates),
+            "preference": preference,
+            "items": items,
+            "count": len(items),
+            "default_candidate": default_candidate,
         }
 
     def _ordered_candidates(self, preferred_browser: str | None = None) -> list[dict[str, Any]]:
@@ -131,10 +182,11 @@ class BrowserTool:
         seen: set[str] = set()
 
         requested_names: list[str] = []
-        if preferred_browser and preferred_browser.strip():
-            requested_names.append(preferred_browser.strip().lower())
+        preferred = self._normalize_browser_name(preferred_browser)
+        if preferred:
+            requested_names.append(preferred)
 
-        requested_names.extend([item.strip() for item in settings.browser_channel_preference.split(",") if item.strip()])
+        requested_names.extend(self._preference_list())
 
         for name in requested_names:
             candidate = by_name.get(name)
@@ -154,12 +206,46 @@ class BrowserTool:
             return self._playwright.firefox
         return self._playwright.chromium
 
+    def _reset_runtime(self) -> None:
+        self._browser = None
+        self._context = None
+        self._page = None
+        self._current_browser_name = None
+        self._current_engine = None
+
+    def _close_browser_runtime(self, stop_playwright: bool = False) -> None:
+        try:
+            if self._context is not None:
+                self._context.close()
+        except Exception:
+            pass
+        try:
+            if self._browser is not None:
+                self._browser.close()
+        except Exception:
+            pass
+        finally:
+            self._browser = None
+            self._context = None
+            self._page = None
+            self._current_browser_name = None
+            self._current_engine = None
+
+        if stop_playwright:
+            try:
+                if self._playwright is not None:
+                    self._playwright.stop()
+            except Exception:
+                pass
+            finally:
+                self._playwright = None
+
     def start(self, headless: bool | None = None, browser_name: str | None = None) -> dict[str, Any]:
         if not settings.allow_browser_tool:
             return {"ok": False, "error": "Browser tool is disabled in config."}
 
         effective_headless = settings.browser_headless if headless is None else headless
-        requested_browser = (browser_name or "").strip().lower() or None
+        requested_browser = self._normalize_browser_name(browser_name)
 
         if self._browser and self._page:
             if requested_browser and requested_browser != self._current_browser_name:
@@ -172,15 +258,22 @@ class BrowserTool:
                     "url": self._page.url,
                     "title": self._page.title() if self._page else None,
                     "browser_name": self._current_browser_name,
+                    "selected_browser": self._current_browser_name,
+                    "requested_browser": requested_browser,
                     "engine": self._current_engine,
+                    "attempted_candidates": [self._current_browser_name] if self._current_browser_name else [],
                 }
 
         errors: list[dict[str, Any]] = []
+        ordered_candidates = self._ordered_candidates(preferred_browser=requested_browser)
+        attempted_candidates: list[str] = []
         try:
             sync_playwright = self._import_playwright()
             self._playwright = sync_playwright().start()
 
-            for candidate in self._ordered_candidates(preferred_browser=requested_browser):
+            for position, candidate in enumerate(ordered_candidates, start=1):
+                attempted_candidates.append(candidate["name"])
+                self._close_browser_runtime(stop_playwright=False)
                 try:
                     launcher = self._engine_launcher(candidate["engine"])
                     launch_kwargs: dict[str, Any] = {"headless": effective_headless}
@@ -197,26 +290,44 @@ class BrowserTool:
                         "message": "Browser started.",
                         "headless": effective_headless,
                         "browser_name": self._current_browser_name,
+                        "selected_browser": self._current_browser_name,
+                        "requested_browser": requested_browser,
                         "engine": self._current_engine,
                         "source": candidate.get("source"),
+                        "attempted_candidates": attempted_candidates,
+                        "selected_candidate_rank": position,
+                        "fallback_used": bool(requested_browser and requested_browser != self._current_browser_name),
                     }
                 except Exception as e:
-                    errors.append({"candidate": candidate["name"], "error": str(e)})
+                    errors.append(
+                        {
+                            "candidate": candidate["name"],
+                            "engine": candidate.get("engine"),
+                            "source": candidate.get("source"),
+                            "error": str(e),
+                        }
+                    )
+                    self._close_browser_runtime(stop_playwright=False)
 
+            self._close_browser_runtime(stop_playwright=True)
             return {
                 "ok": False,
                 "error": "No configured browser candidate could be launched.",
                 "requested_browser": requested_browser,
-                "candidates": self._ordered_candidates(preferred_browser=requested_browser),
+                "attempted_candidates": attempted_candidates,
+                "candidates": ordered_candidates,
                 "errors": errors,
             }
         except Exception as e:
+            self._close_browser_runtime(stop_playwright=True)
             return {
                 "ok": False,
                 "error": (
                     f"Failed to start Playwright browser runtime: {e}. "
                     "If Playwright is installed, run `python -m playwright install chromium`."
                 ),
+                "requested_browser": requested_browser,
+                "attempted_candidates": attempted_candidates,
             }
 
     def _ensure_page(self) -> tuple[bool, dict[str, Any] | None]:
@@ -265,7 +376,14 @@ class BrowserTool:
 
     def state(self) -> dict[str, Any]:
         if not self._page:
-            return {"ok": True, "started": False, "url": None, "title": None, "browser_name": self._current_browser_name, "engine": self._current_engine}
+            return {
+                "ok": True,
+                "started": False,
+                "url": None,
+                "title": None,
+                "browser_name": self._current_browser_name,
+                "engine": self._current_engine,
+            }
         try:
             return {
                 "ok": True,
@@ -282,7 +400,7 @@ class BrowserTool:
         if not url.strip():
             return {"ok": False, "error": "URL is required."}
 
-        requested_browser = (browser_name or "").strip().lower() or None
+        requested_browser = self._normalize_browser_name(browser_name)
         if requested_browser and self._page is not None and requested_browser != self._current_browser_name:
             self.close()
 
@@ -294,9 +412,22 @@ class BrowserTool:
         try:
             assert self._page is not None
             self._page.goto(url, wait_until="domcontentloaded")
-            return {"ok": True, "url": self._page.url, "title": self._page.title(), "browser_name": self._current_browser_name, "engine": self._current_engine}
+            return {
+                "ok": True,
+                "url": self._page.url,
+                "title": self._page.title(),
+                "browser_name": self._current_browser_name,
+                "selected_browser": self._current_browser_name,
+                "requested_browser": requested_browser,
+                "engine": self._current_engine,
+            }
         except Exception as e:
-            return {"ok": False, "error": str(e)}
+            return {
+                "ok": False,
+                "error": str(e),
+                "requested_browser": requested_browser,
+                "browser_name": self._current_browser_name,
+            }
 
     def back(self) -> dict[str, Any]:
         ok, result = self._ensure_page()
@@ -419,28 +550,7 @@ class BrowserTool:
             return {"ok": False, "error": str(e)}
 
     def close(self) -> dict[str, Any]:
-        try:
-            if self._context is not None:
-                self._context.close()
-            if self._browser is not None:
-                self._browser.close()
-            if self._playwright is not None:
-                self._playwright.stop()
-        except Exception as e:
-            self._playwright = None
-            self._browser = None
-            self._context = None
-            self._page = None
-            self._current_browser_name = None
-            self._current_engine = None
-            return {"ok": False, "error": str(e)}
-
-        self._playwright = None
-        self._browser = None
-        self._context = None
-        self._page = None
-        self._current_browser_name = None
-        self._current_engine = None
+        self._close_browser_runtime(stop_playwright=True)
         return {"ok": True, "message": "Browser closed."}
 
 

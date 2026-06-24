@@ -24,13 +24,21 @@ Example:
 ```powershell
 .\scripts\validate-runtime.ps1
 .\scripts\validate-runtime.ps1 -AttemptBrowserStarts
-.\scripts\validate-runtime.ps1 -AttemptBrowserStarts -FocusTitle "Visual Studio Code"
+.\scripts\validate-runtime.ps1 -AttemptBrowserOpens -Browser chrome,msedge -BrowserUrl "https://example.com"
+.\scripts\validate-runtime.ps1 -FocusTitle "Visual Studio Code" -FocusMatchIndex 0
 ```
 
 ## Expected output
 - JSON report in `data/validation/`
-- browser candidate availability
-- browser doctor state
+- browser candidate availability + default candidate
+- browser doctor + browser context state
 - desktop safety state
 - desktop active window and window list
-- optional browser launch attempt results
+- shell launcher readiness
+- optional browser launch/open attempt results
+- optional desktop focus attempt + undo result
+
+## Model runtime checks
+- `show model status` in chat or shell
+- `POST /models/use-local` to prefer downloaded GGUF models
+- `.\scripts\use-local-models.ps1` to switch `.env` quickly on Windows

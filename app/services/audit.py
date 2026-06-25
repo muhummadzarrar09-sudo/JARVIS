@@ -149,6 +149,40 @@ class AuditService:
             "items": items[-limit:],
         }
 
+    def verify_archive(self, archive_path: str) -> dict[str, Any]:
+        try:
+            path = self._resolve_archive_path(archive_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if not path.exists() or not path.is_file():
+            return {"ok": False, "error": f"Archive file not found: {path}"}
+
+        valid_lines = 0
+        invalid_lines = 0
+        recent_items: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                loaded = json.loads(line)
+                if isinstance(loaded, dict):
+                    valid_lines += 1
+                    recent_items.append(loaded)
+                else:
+                    invalid_lines += 1
+            except Exception:
+                invalid_lines += 1
+
+        return {
+            "ok": invalid_lines == 0,
+            "path": str(path),
+            "size_bytes": path.stat().st_size,
+            "valid_lines": valid_lines,
+            "invalid_lines": invalid_lines,
+            "sample_tail": recent_items[-5:],
+            "plain_english": "This is the audit archive verification result.",
+        }
+
     def rotate(self, label: str | None = None, keep_archives: int = 10) -> dict[str, Any]:
         if not self.path.exists() or self.path.stat().st_size == 0:
             self.path.parent.mkdir(parents=True, exist_ok=True)

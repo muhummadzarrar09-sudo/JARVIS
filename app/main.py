@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.routes.acceptance import router as acceptance_router
 from app.api.routes.apps import router as apps_router
 from app.api.routes.audit import router as audit_router
 from app.api.routes.browser import router as browser_router
@@ -18,6 +19,7 @@ from app.api.routes.operator import router as operator_router
 from app.api.routes.processes import router as processes_router
 from app.api.routes.progress import router as progress_router
 from app.api.routes.quick_actions import router as quick_actions_router
+from app.api.routes.runtime import router as runtime_router
 from app.api.routes.sessions import router as sessions_router
 from app.api.routes.shell import router as shell_router
 from app.api.routes.tasks import router as tasks_router
@@ -31,8 +33,14 @@ from app.services.audit import audit_service
 from app.services.browser_tool import browser_tool
 from app.services.memory import memory_service
 from app.services.task_service import task_service
+from app.services.wrapper_state_service import wrapper_state_service
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    return RedirectResponse(url="/ui/app-shell", status_code=307)
 
 allowed_origins = [item.strip() for item in settings.app_allowed_origins.split(",") if item.strip()]
 allowed_hosts = [item.strip() for item in settings.app_allowed_hosts.split(",") if item.strip()]
@@ -98,12 +106,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
 
 
 app.include_router(health_router)
+app.include_router(acceptance_router)
 app.include_router(chat_router)
 app.include_router(tools_router)
 app.include_router(tool_registry_router)
 app.include_router(apps_router)
 app.include_router(progress_router)
 app.include_router(quick_actions_router)
+app.include_router(runtime_router)
 app.include_router(files_router)
 app.include_router(browser_router)
 app.include_router(desktop_router)
@@ -126,6 +136,7 @@ app.include_router(maintenance_router)
 def on_startup() -> None:
     memory_service.initialize()
     task_service.initialize()
+    wrapper_state_service.sanitize_all()
     audit_service.log_event(
         event_type="startup",
         payload={"app_name": settings.app_name, "message": "JARVIS Local started"},

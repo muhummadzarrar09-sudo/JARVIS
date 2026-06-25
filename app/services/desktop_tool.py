@@ -492,6 +492,33 @@ class DesktopTool:
             return self._with_guard("undo_focus", result)
         return self._with_guard("undo_focus", {"ok": False, "error": "Previous focus target had no recoverable handle or title."})
 
+    def validate_focus_flow(self, title: str, exact: bool = False, match_index: int = 0, undo: bool = True) -> dict[str, Any]:
+        if not title.strip():
+            return self._with_guard("focus_window", {"ok": False, "error": "Window title is required."})
+        find_result = self.find_windows(title, exact=exact)
+        focus_result = self.focus_window(title, exact=exact, match_index=match_index)
+        undo_result = self.undo_last_focus() if undo and focus_result.get("ok") else None
+        warnings = []
+        if not find_result.get("ok"):
+            warnings.append("Window find failed.")
+        if not focus_result.get("ok"):
+            warnings.append("Focus validation failed.")
+        if undo and focus_result.get("ok") and undo_result and not undo_result.get("ok"):
+            warnings.append("Undo focus failed after a successful focus test.")
+        return {
+            "ok": bool(find_result.get("ok") and focus_result.get("ok") and (undo_result is None or undo_result.get("ok"))),
+            "title": title,
+            "exact": exact,
+            "match_index": match_index,
+            "find": find_result,
+            "focus": focus_result,
+            "undo": undo_result,
+            "warning_count": len(warnings),
+            "warnings": warnings,
+            "plain_english": "This is the desktop focus validation flow for the requested window title.",
+            "next_action": warnings[0] if warnings else None,
+        }
+
     def type_text(self, text: str) -> dict[str, Any]:
         if not settings.allow_desktop_tool:
             return self._with_guard("type_text", {"ok": False, "error": "Desktop tool is disabled in config."})

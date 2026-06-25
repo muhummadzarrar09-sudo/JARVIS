@@ -4,7 +4,9 @@ from app.services.app_wrapper_service import app_wrapper_service
 from app.services.audit import audit_service
 from app.services.database_service import database_service
 from app.services.model_service import model_service
+from app.services.maintenance_settings_service import maintenance_settings_service
 from app.services.recovery_service import recovery_service
+from app.services.memory import memory_service
 
 
 class MaintenanceService:
@@ -134,6 +136,65 @@ class MaintenanceService:
             "suggested_actions": suggested_actions[:8],
             "plain_english": "This is the maintenance doctor summary for the current local runtime.",
             "next_action": suggested_actions[0] if suggested_actions else None,
+        }
+
+    def verification_summary(self, limit: int = 5) -> dict[str, Any]:
+        settings_data = maintenance_settings_service.get_settings()
+        backups = database_service.list_backups(limit=limit).get("items", [])
+        backup_checks = [database_service.verify_backup(item.get("relative_path") or item.get("path")) for item in backups]
+        archives = audit_service.list_archives(limit=limit).get("items", [])
+        archive_checks = [audit_service.verify_archive(item.get("path")) for item in archives]
+        packs = recovery_service.list_packs(limit=limit).get("items", [])
+        pack_checks = [recovery_service.verify_pack(item.get("relative_path") or item.get("path")) for item in packs]
+        cleanup_preview = memory_service.cleanup_sessions(
+            keep_recent=settings_data.get("cleanup_keep_recent", 25),
+            drop_empty_older_than_days=settings_data.get("cleanup_empty_days", 7),
+            drop_inactive_older_than_days=settings_data.get("cleanup_inactive_days", 90),
+            dry_run=True,
+        )
+
+        items = []
+        items.append({
+            "id": "db_backups",
+            "label": "Database backups",
+            "status": "pass" if all(item.get("ok") for item in backup_checks) else ("warn" if backup_checks else "warn"),
+            "details": f"verified={len(backup_checks)}",
+            "items": backup_checks,
+        })
+        items.append({
+            "id": "audit_archives",
+            "label": "Audit archives",
+            "status": "pass" if all(item.get("ok") for item in archive_checks) else ("warn" if archive_checks else "warn"),
+            "details": f"verified={len(archive_checks)}",
+            "items": archive_checks,
+        })
+        items.append({
+            "id": "recovery_packs",
+            "label": "Recovery packs",
+            "status": "pass" if all(item.get("ok") for item in pack_checks) else ("warn" if pack_checks else "warn"),
+            "details": f"verified={len(pack_checks)}",
+            "items": pack_checks,
+        })
+        items.append({
+            "id": "session_cleanup_preview",
+            "label": "Session cleanup preview",
+            "status": "pass" if cleanup_preview.get("ok") else "warn",
+            "details": f"candidate_count={cleanup_preview.get('candidate_count', 0)}",
+            "items": cleanup_preview.get("candidates", [])[:10],
+        })
+
+        counts = {"pass": 0, "warn": 0, "fail": 0}
+        for item in items:
+            counts[item["status"]] = counts.get(item["status"], 0) + 1
+        overall = "pass" if counts.get("warn", 0) == 0 and counts.get("fail", 0) == 0 else ("fail" if counts.get("fail", 0) else "warn")
+        return {
+            "ok": True,
+            "overall": overall,
+            "counts": counts,
+            "items": items,
+            "settings": settings_data,
+            "plain_english": "This is the maintenance verification summary across backups, archives, recovery packs, and cleanup preview behavior.",
+            "next_action": next((item.get("details") for item in items if item.get("status") != "pass"), None),
         }
 
     def history(self, limit: int = 50, event_type: str | None = None, search: str | None = None) -> dict[str, Any]:

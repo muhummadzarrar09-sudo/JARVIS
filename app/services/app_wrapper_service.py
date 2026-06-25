@@ -516,6 +516,8 @@ class AppWrapperService:
     def current_project_context(self, target: str | None = None) -> dict[str, Any]:
         preferred = self._preferred_project_target(target)
         summary = self._project_summary(preferred)
+        if not summary.get("ok") and preferred != ".":
+            summary = self._project_summary(".")
         if not summary.get("ok"):
             return summary
 

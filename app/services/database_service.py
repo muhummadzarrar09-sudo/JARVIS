@@ -1,4 +1,5 @@
 import shutil
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -123,6 +124,32 @@ class DatabaseService:
             "deleted": True,
             "path": str(path),
             "plain_english": "JARVIS deleted the selected database backup.",
+        }
+
+    def verify_backup(self, backup_path: str) -> dict[str, Any]:
+        try:
+            path = self.resolve_backup_path(backup_path)
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+        if not path.exists() or not path.is_file():
+            return {"ok": False, "error": f"Backup file not found: {path}"}
+        try:
+            with sqlite3.connect(path, timeout=5) as conn:
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+        except Exception as e:
+            return {
+                "ok": False,
+                "path": str(path),
+                "relative_path": str(path.relative_to(self._workspace_root())),
+                "error": f"SQLite backup verification failed: {e}",
+            }
+        return {
+            "ok": integrity == "ok",
+            "path": str(path),
+            "relative_path": str(path.relative_to(self._workspace_root())),
+            "size_bytes": path.stat().st_size,
+            "integrity_check": integrity,
+            "plain_english": "This is the database backup verification result.",
         }
 
     def backup(self, label: str | None = None) -> dict[str, Any]:

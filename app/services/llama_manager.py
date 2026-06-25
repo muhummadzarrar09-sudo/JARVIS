@@ -51,6 +51,15 @@ class LlamaManager:
             "plain_english": "JARVIS warmed the local GGUF model into memory for faster first replies.",
         }
 
+    def unload_all(self) -> dict[str, Any]:
+        count = len(self._models)
+        self._models = {}
+        return {
+            "ok": True,
+            "unloaded_count": count,
+            "plain_english": "JARVIS cleared the in-process local model cache.",
+        }
+
     def loaded_models(self) -> dict[str, Any]:
         return {
             "ok": True,

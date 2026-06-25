@@ -12,6 +12,12 @@ class ModelConfigureRequest(BaseModel):
     main_model: str | None = Field(default=None, max_length=255)
 
 
+class ModelVerifyRequest(BaseModel):
+    slot: str = Field(default="fast", pattern="^(fast|main)$")
+    prompt: str | None = Field(default=None, max_length=400)
+    expected: str | None = Field(default=None, max_length=200)
+
+
 @router.get("/status")
 def model_status() -> dict:
     return model_service.status()
@@ -39,3 +45,13 @@ def use_mock_models() -> dict:
 @router.post("/preload")
 def preload_model(slot: str = Query(default="fast", pattern="^(fast|main)$")) -> dict:
     return model_service.preload_selected_model(slot=slot)
+
+
+@router.post("/verify")
+def verify_model_runtime(payload: ModelVerifyRequest) -> dict:
+    return model_service.verify_runtime(slot=payload.slot, prompt=payload.prompt, expected=payload.expected)
+
+
+@router.post("/unload")
+def unload_model_runtime() -> dict:
+    return model_service.unload_runtime_cache()

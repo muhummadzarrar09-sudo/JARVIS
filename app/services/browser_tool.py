@@ -549,6 +549,49 @@ class BrowserTool:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def validate_candidates(
+        self,
+        browser_names: list[str] | None = None,
+        url: str | None = None,
+        headless: bool | None = None,
+    ) -> dict[str, Any]:
+        available = self.available_browsers()
+        detected_names = [item.get("name") for item in available.get("items", []) if item.get("name")]
+        requested_names = browser_names or detected_names
+        results: list[dict[str, Any]] = []
+
+        for raw_name in requested_names:
+            name = self._normalize_browser_name(raw_name)
+            if not name:
+                continue
+            entry: dict[str, Any] = {"candidate": name}
+            start_result = self.start(headless=headless, browser_name=name)
+            entry["start"] = start_result
+            if start_result.get("ok") and url:
+                entry["open_url"] = self.open_url(url, headless=headless, browser_name=name)
+                entry["state_after_open"] = self.state()
+            self.close()
+            results.append(entry)
+
+        warnings = []
+        for item in results:
+            if not item.get("start", {}).get("ok"):
+                warnings.append(f"{item.get('candidate')} failed to start")
+            elif url and not item.get("open_url", {}).get("ok", True):
+                warnings.append(f"{item.get('candidate')} failed to open URL")
+
+        return {
+            "ok": True,
+            "available": available,
+            "requested_names": requested_names,
+            "url": url,
+            "items": results,
+            "warning_count": len(warnings),
+            "warnings": warnings,
+            "plain_english": "This is the browser launch validation matrix across the requested browser candidates.",
+            "next_action": warnings[0] if warnings else None,
+        }
+
     def close(self) -> dict[str, Any]:
         self._close_browser_runtime(stop_playwright=True)
         return {"ok": True, "message": "Browser closed."}

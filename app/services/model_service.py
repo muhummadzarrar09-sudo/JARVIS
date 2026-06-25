@@ -195,11 +195,37 @@ class ModelService:
             "reason": reason,
         }
 
+    def consistency_summary(self) -> dict[str, Any]:
+        provider = self.effective_provider()
+        discovered = self.discover_models()
+        loaded = llama_manager.loaded_models()
+        warnings: list[str] = []
+
+        if provider.get("effective_provider") == "llama_cpp" and not provider.get("selected_model_exists"):
+            warnings.append("Local GGUF runtime is selected, but the chosen model file is missing.")
+        if provider.get("configured_provider") == "llama_cpp" and not provider.get("llama_cpp_installed"):
+            warnings.append("llama.cpp is configured but the Python bindings are not installed.")
+        if provider.get("effective_provider") == "mock" and discovered.get("count"):
+            warnings.append("Local GGUF models exist, but runtime is not currently using them.")
+
+        overall = "pass" if not warnings else "warn"
+        return {
+            "ok": True,
+            "overall": overall,
+            "provider": provider,
+            "discovered_count": discovered.get("count", 0),
+            "loaded_models": loaded,
+            "warnings": warnings,
+            "plain_english": "This is the model/runtime consistency summary.",
+            "next_action": warnings[0] if warnings else None,
+        }
+
     def status(self) -> dict[str, Any]:
         discovered = self.discover_models()
         provider = self.effective_provider()
         fast = self.resolve_model_choice(prompt="quick reply")
         main = self.resolve_model_choice(prompt="plan and analyze this")
+        consistency = self.consistency_summary()
         plain = "JARVIS is using mock mode right now."
         next_action = "Switch to local models or keep using mock mode."
         if provider.get("effective_provider") == "llama_cpp":
@@ -213,6 +239,7 @@ class ModelService:
         return {
             "ok": True,
             "provider": provider,
+            "consistency": consistency,
             "discovered": discovered,
             "fast_selection": fast,
             "main_selection": main,
@@ -253,12 +280,14 @@ class ModelService:
         if main_model:
             settings.default_main_model = main_model
 
+        unload_result = llama_manager.unload_all()
         return {
             "ok": True,
             "configured_provider": normalized,
             "fast_model": settings.default_fast_model,
             "main_model": settings.default_main_model,
             "env_path": str(env_path),
+            "runtime_cache_reset": unload_result,
             "restart_recommended": True,
             "plain_english": f"JARVIS switched provider config to {normalized}.",
             "next_action": "Restart the API or shell if you want every process to pick up the new model settings cleanly.",
@@ -313,6 +342,56 @@ class ModelService:
         result["slot"] = normalized_slot
         result["model_name"] = selected.get("name")
         return result
+
+    def unload_runtime_cache(self) -> dict[str, Any]:
+        return llama_manager.unload_all()
+
+    def verify_runtime(self, slot: str = "fast", prompt: str | None = None, expected: str | None = None) -> dict[str, Any]:
+        normalized_slot = (slot or "fast").strip().lower()
+        probe_prompt = prompt or f"Reply with exactly: MODEL VERIFY {normalized_slot.upper()}"
+        expected_text = expected or f"MODEL VERIFY {normalized_slot.upper()}"
+        provider = self.effective_provider()
+        if provider.get("effective_provider") != "llama_cpp":
+            return {
+                "ok": False,
+                "error": "Local llama.cpp runtime is not active, so runtime verification cannot run a GGUF inference test.",
+                "provider": provider,
+            }
+
+        choice_prompt = "plan and analyze this" if normalized_slot == "main" else "quick reply"
+        choice = self.resolve_model_choice(prompt=choice_prompt)
+        selected = choice.get("selected") or {}
+        model_path = Path(selected.get("path")) if selected.get("path") else None
+        if not model_path or not model_path.exists():
+            return {
+                "ok": False,
+                "error": "No selected GGUF model is available for runtime verification.",
+                "slot": normalized_slot,
+                "choice": choice,
+            }
+
+        reply = llama_manager.generate(
+            model_path=model_path,
+            system_prompt="You are JARVIS. Follow the user instruction exactly and return only the requested text when asked.",
+            context_messages=[],
+            user_message=probe_prompt,
+            max_tokens=settings.llama_max_tokens,
+        )
+        model_name = selected.get("name") or model_path.name
+        passed = expected_text.strip() in (reply or "")
+        return {
+            "ok": passed,
+            "slot": normalized_slot,
+            "provider": provider,
+            "model_name": model_name,
+            "selected_model": selected,
+            "prompt": probe_prompt,
+            "expected_contains": expected_text,
+            "reply": reply,
+            "loaded_models": llama_manager.loaded_models(),
+            "plain_english": "This is the local GGUF runtime verification result.",
+            "next_action": None if passed else "Inspect the reply and runtime state because the local verification output did not match the expected probe.",
+        }
 
 
 model_service = ModelService()

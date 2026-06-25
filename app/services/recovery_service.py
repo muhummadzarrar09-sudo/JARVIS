@@ -85,7 +85,7 @@ class RecoveryService:
             "plain_english": "JARVIS deleted the selected recovery pack.",
         }
 
-    def preview_pack(self, pack_path: str) -> dict[str, Any]:
+    def verify_pack(self, pack_path: str) -> dict[str, Any]:
         try:
             source = self.resolve_pack_path(pack_path)
         except Exception as e:
@@ -114,8 +114,11 @@ class RecoveryService:
             "manifest": manifest,
             "present_required": present_required,
             "missing_required": missing_required,
-            "plain_english": "This is the current recovery-pack preview and manifest summary.",
+            "plain_english": "This is the current recovery-pack verification summary.",
         }
+
+    def preview_pack(self, pack_path: str) -> dict[str, Any]:
+        return self.verify_pack(pack_path)
 
     def export_pack(self, label: str | None = None, include_backups: bool = True, include_archives: bool = True) -> dict[str, Any]:
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")

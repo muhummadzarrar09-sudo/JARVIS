@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     checkpoint_dir: Path = Field(default=Path("./data/checkpoints"), alias="CHECKPOINT_DIR")
     wrapper_state_path: Path = Field(default=Path("./data/memory/app_wrapper_state.json"), alias="WRAPPER_STATE_PATH")
     maintenance_settings_path: Path = Field(default=Path("./data/memory/maintenance_settings.json"), alias="MAINTENANCE_SETTINGS_PATH")
+    acceptance_state_path: Path = Field(default=Path("./data/memory/acceptance_state.json"), alias="ACCEPTANCE_STATE_PATH")
     max_chat_message_chars: int = Field(default=12000, alias="MAX_CHAT_MESSAGE_CHARS")
     audit_max_field_chars: int = Field(default=4000, alias="AUDIT_MAX_FIELD_CHARS")
     audit_max_collection_items: int = Field(default=40, alias="AUDIT_MAX_COLLECTION_ITEMS")

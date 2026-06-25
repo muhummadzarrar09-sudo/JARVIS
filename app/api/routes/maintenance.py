@@ -43,6 +43,13 @@ def maintenance_doctor() -> dict:
     return result
 
 
+@router.get("/verify")
+def maintenance_verify(limit: int = Query(default=5, ge=1, le=50)) -> dict:
+    result = maintenance_service.verification_summary(limit=limit)
+    audit_service.log_event("maintenance_verify", {"result_ok": result.get("ok"), "overall": result.get("overall"), "limit": limit})
+    return result
+
+
 @router.get("/history")
 def maintenance_history(
     limit: int = Query(default=50, ge=1, le=500),

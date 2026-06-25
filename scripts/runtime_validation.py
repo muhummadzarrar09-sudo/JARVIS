@@ -15,6 +15,7 @@ from app.services.app_wrapper_service import app_wrapper_service
 from app.services.browser_tool import browser_tool
 from app.services.desktop_tool import desktop_tool
 from app.services.progress_service import progress_service
+from app.services.runtime_stability_service import runtime_stability_service
 from app.services.validation_service import validation_service
 from app.services.model_service import model_service
 
@@ -66,6 +67,7 @@ def collect_report(
         "browser_available": browser_available,
         "browser_context": app_wrapper_service.current_browser_context(),
         "browser_doctor": app_wrapper_service.wrapper_doctor("browser"),
+        "runtime_summary": runtime_stability_service.summary(),
         "model_status": model_service.status(),
         "desktop_safety": desktop_tool.safety_status(),
         "desktop_active": desktop_tool.active_window(),
@@ -76,11 +78,22 @@ def collect_report(
     if focus_title:
         report["desktop_find"] = desktop_tool.find_windows(focus_title, exact=False)
         report["desktop_focus_attempt"] = desktop_tool.focus_window(focus_title, exact=False, match_index=focus_match_index)
+        report["desktop_focus_validation"] = runtime_stability_service.desktop_focus_validation(
+            title=focus_title,
+            exact=False,
+            match_index=focus_match_index,
+            undo=True,
+        )
         if report["desktop_focus_attempt"].get("ok"):
             report["desktop_focus_undo"] = desktop_tool.undo_last_focus()
 
     if attempt_browser_starts or attempt_browser_opens:
         names = _requested_browser_names(requested_browsers, available_items)
+        report["browser_validation_matrix"] = runtime_stability_service.browser_validation_matrix(
+            browser_names=names,
+            url=browser_url if attempt_browser_opens else None,
+            headless=None,
+        )
         browser_checks = []
         for name in names:
             entry: dict[str, Any] = {"candidate": name}

@@ -164,6 +164,13 @@ def app_shell() -> str:
             <button class='chip' onclick='vacuumDatabase()'>vacuum db</button>
             <button class='chip' onclick='rotateAudit()'>rotate audit</button>
             <button class='chip' onclick='pruneAudit()'>prune audit</button>
+            <button class='chip' onclick='verifyMaintenance()'>verify maintenance</button>
+            <button class='chip' onclick='runAcceptance(false)'>accept safe</button>
+            <button class='chip' onclick='runAcceptance(true)'>accept deep</button>
+            <button class='chip' onclick='showAcceptanceHistory()'>accept history</button>
+            <button class='chip' onclick='showFinalBlockers()'>accept blockers</button>
+            <button class='chip' onclick='exportAcceptance()'>accept export</button>
+            <button class='chip' onclick='resetAcceptance()'>accept reset</button>
             <button class='chip' onclick='exportRecoveryPack()'>export pack</button>
             <button class='chip' onclick='cleanupSessions("light")'>cleanup light</button>
             <button class='chip' onclick='cleanupSessions("normal")'>cleanup normal</button>
@@ -272,8 +279,25 @@ def app_shell() -> str:
 
         <div class='separator'></div>
         <div class='stack'>
+          <div class='small-title'>Shell Path</div>
+          <div id='shellPathBlock' class='tiny'>loading…</div>
+        </div>
+
+        <div class='separator'></div>
+        <div class='stack'>
           <div class='small-title'>Model Runtime</div>
           <div id='modelBlock' class='tiny'>loading…</div>
+        </div>
+
+        <div class='separator'></div>
+        <div class='stack'>
+          <div class='small-title'>Runtime Stability</div>
+          <div id='runtimeBlock' class='tiny'>loading…</div>
+          <div class='separator'></div>
+          <div class='chips'>
+            <button class='chip' onclick='validateBrowserRuntime()'>validate browser</button>
+            <button class='chip' onclick='validateDesktopRuntime()'>validate desktop</button>
+          </div>
         </div>
 
         <div class='separator'></div>
@@ -289,6 +313,9 @@ def app_shell() -> str:
             <button class='chip' onclick='applyModelSelection()'>apply models</button>
             <button class='chip' onclick='useLocalModels()'>use local</button>
             <button class='chip' onclick='useMockModels()'>use mock</button>
+            <button class='chip' onclick='verifyModelRuntime("fast")'>verify fast</button>
+            <button class='chip' onclick='verifyModelRuntime("main")'>verify main</button>
+            <button class='chip' onclick='unloadModelRuntime()'>unload models</button>
           </div>
         </div>
 
@@ -320,6 +347,18 @@ def app_shell() -> str:
         <div class='stack'>
           <div class='small-title'>Maintenance Doctor</div>
           <div id='maintenanceDoctorBlock' class='tiny'>loading…</div>
+        </div>
+
+        <div class='separator'></div>
+        <div class='stack'>
+          <div class='small-title'>Maintenance Verification</div>
+          <div id='maintenanceVerificationBlock' class='tiny'>loading…</div>
+        </div>
+
+        <div class='separator'></div>
+        <div class='stack'>
+          <div class='small-title'>Acceptance Sweep</div>
+          <div id='acceptanceBlock' class='tiny'>loading…</div>
         </div>
 
         <div class='separator'></div>
@@ -408,6 +447,7 @@ def app_shell() -> str:
     let latestShellState = null;
     let lastPrompt = '';
     let sending = false;
+    let chatReady = false;
 
     const feed = document.getElementById('feed');
     const promptInput = document.getElementById('prompt');
@@ -439,6 +479,14 @@ def app_shell() -> str:
 
     function setComposerStatus(text) {
       setText('composerStatus', text);
+    }
+
+    function setShellReady(ready, reason='') {
+      chatReady = !!ready;
+      promptInput.disabled = !ready && !sending;
+      sendButton.disabled = !ready && !sending;
+      if (!ready && reason) setComposerStatus(reason);
+      if (ready && !sending) setComposerStatus('Ready.');
     }
 
     function showToast(message, kind='info') {
@@ -586,9 +634,9 @@ def app_shell() -> str:
 
     function setSending(next) {
       sending = next;
-      sendButton.disabled = next;
-      promptInput.disabled = next;
-      setComposerStatus(next ? 'Sending to JARVIS…' : 'Ready.');
+      sendButton.disabled = next || !chatReady;
+      promptInput.disabled = next || !chatReady;
+      setComposerStatus(next ? 'Sending to JARVIS…' : (chatReady ? 'Ready.' : 'Shell send path not ready yet.'));
     }
 
     async function api(path, options={}) {
@@ -664,6 +712,11 @@ def app_shell() -> str:
 
     async function sendPrompt() {
       if (sending) return;
+      if (!chatReady) {
+        showToast('Shell send path is not ready yet. Try refresh dashboard or reconnect.', 'error');
+        setComposerStatus('Shell send path is not ready yet.');
+        return;
+      }
       const message = promptInput.value.trim();
       if (!message) {
         setComposerStatus('Type something first.');
@@ -707,6 +760,8 @@ def app_shell() -> str:
         setComposerStatus('Reply received.');
         showToast('Reply received.', 'info');
       } catch (error) {
+        promptInput.value = message;
+        writeStorage(storageKeys.draft, message);
         appendEntry('error', `Chat send failed: ${error.message || error}`, true);
         pushErrorRecord('Chat send failed', error.message || String(error));
         showToast('Chat send failed.', 'error');
@@ -966,6 +1021,131 @@ def app_shell() -> str:
       renderMaintenance(maintenance.maintenance || {});
       showToast('Maintenance state refreshed.', 'info');
       pushMaintenanceOp('maintenance_refresh', 'manual');
+    }
+
+    async function validateBrowserRuntime() {
+      const preferred = latestShellState?.browser?.preferred_browser;
+      const browsers = preferred ? [preferred] : null;
+      const result = await safeApi('/runtime/browser/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ browsers, url: 'https://example.com', headless: false })
+      });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Browser runtime validation failed', result.error || 'unknown error');
+        showToast('Browser runtime validation failed.', 'error');
+        return;
+      }
+      appendEntry('runtime-browser-validate', JSON.stringify(result, null, 2));
+      showToast('Browser runtime validation complete.', 'info');
+      pushMaintenanceOp('runtime_browser_validate', result.warning_count || 0);
+      await refreshState();
+    }
+
+    async function validateDesktopRuntime() {
+      const activeTitle = latestShellState?.runtime?.desktop?.active?.window?.title || latestShellState?.validation?.desktop_active?.window?.title;
+      if (!activeTitle) {
+        showToast('No active desktop window title is available for validation.', 'error');
+        return;
+      }
+      const result = await safeApi('/runtime/desktop/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: activeTitle, exact: false, match_index: 0, undo: true })
+      });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Desktop runtime validation failed', result.error || 'unknown error');
+        showToast('Desktop runtime validation failed.', 'error');
+        return;
+      }
+      appendEntry('runtime-desktop-validate', JSON.stringify(result, null, 2));
+      showToast('Desktop runtime validation complete.', 'info');
+      pushMaintenanceOp('runtime_desktop_validate', result.warning_count || 0);
+      await refreshState();
+    }
+
+    async function runAcceptance(deep=false) {
+      const result = await safeApi('/acceptance/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deep })
+      });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Acceptance sweep failed', result.error || 'unknown error');
+        showToast('Acceptance sweep failed.', 'error');
+        return;
+      }
+      appendEntry('acceptance', JSON.stringify(result, null, 2));
+      showToast(`Acceptance sweep (${deep ? 'deep' : 'safe'}) complete.`, 'info');
+      pushMaintenanceOp('acceptance_run', `${deep ? 'deep' : 'safe'}:${result.overall}`);
+      await refreshState();
+    }
+
+    async function showAcceptanceHistory() {
+      const result = await safeApi('/acceptance/history?limit=10');
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Acceptance history failed', result.error || 'unknown error');
+        showToast('Acceptance history failed.', 'error');
+        return;
+      }
+      appendEntry('acceptance-history', JSON.stringify(result, null, 2));
+      showToast('Acceptance history loaded.', 'info');
+      pushMaintenanceOp('acceptance_history', result.count || 0);
+    }
+
+    async function resetAcceptance() {
+      const ok = window.confirm('Reset acceptance history?');
+      if (!ok) return;
+      const result = await safeApi('/acceptance/reset', { method: 'POST' });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Acceptance reset failed', result.error || 'unknown error');
+        showToast('Acceptance reset failed.', 'error');
+        return;
+      }
+      showToast('Acceptance history reset.', 'info');
+      pushMaintenanceOp('acceptance_reset', 'ok');
+      await refreshState();
+    }
+
+    async function showFinalBlockers() {
+      const result = await safeApi('/acceptance/final-blockers');
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Acceptance final blockers failed', result.error || 'unknown error');
+        showToast('Acceptance final blockers failed.', 'error');
+        return;
+      }
+      appendEntry('acceptance-blockers', JSON.stringify(result, null, 2));
+      showToast('Acceptance blocker summary loaded.', 'info');
+      pushMaintenanceOp('acceptance_final_blockers', result.blocker_count || 0);
+    }
+
+    async function exportAcceptance() {
+      const result = await safeApi('/acceptance/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Acceptance export failed', result.error || 'unknown error');
+        showToast('Acceptance export failed.', 'error');
+        return;
+      }
+      appendEntry('acceptance-export', JSON.stringify(result, null, 2));
+      showToast('Acceptance report exported.', 'info');
+      pushMaintenanceOp('acceptance_export', result.path || 'ok');
+    }
+
+    async function verifyMaintenance() {
+      const result = await safeApi('/maintenance/verify?limit=5');
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Maintenance verification failed', result.error || 'unknown error');
+        showToast('Maintenance verification failed.', 'error');
+        return;
+      }
+      appendEntry('maintenance-verify', JSON.stringify(result, null, 2));
+      showToast('Maintenance verification complete.', 'info');
+      pushMaintenanceOp('maintenance_verify', result.overall || 'unknown');
+      await refreshState();
     }
 
     async function exportRecoveryPack() {
@@ -1301,6 +1481,51 @@ def app_shell() -> str:
       await refreshState();
     }
 
+    function renderBootstrap(bootstrap) {
+      if (!bootstrap || bootstrap.error) return;
+      const hygiene = bootstrap.state_hygiene || {};
+      const model = bootstrap.models || {};
+      let banner = `Shell bootstrap • model=${model.provider || 'unknown'} • selected=${model.selected_model || 'none'}`;
+      if ((hygiene.count || 0) > 0) banner += ` • normalized_state_items=${hygiene.count}`;
+      if (bootstrap.next_action) banner += ` • next=${bootstrap.next_action}`;
+      setText('startupBanner', banner);
+    }
+
+    function renderShellPath(health, chatPing, shellBootstrap, shellDoctor) {
+      let text = `API: ${health?.status || 'unknown'}`;
+      text += `\nChat ready: ${chatPing?.chat_ready ? 'yes' : 'no'}`;
+      if (chatPing?.selected_model) text += `\nModel: ${chatPing.selected_model}`;
+      text += `\nLoaded count: ${chatPing?.loaded_model_count ?? 0}`;
+      if (chatPing?.consistency?.overall) text += `\nConsistency: ${chatPing.consistency.overall}`;
+      const hygieneCount = shellBootstrap?.state_hygiene?.count ?? 0;
+      text += `\nState hygiene issues: ${hygieneCount}`;
+      if (shellDoctor?.database_integrity) text += `\nDB integrity: ${shellDoctor.database_integrity}`;
+      if (shellDoctor?.next_action) text += `\nNext: ${shellDoctor.next_action}`;
+      setText('shellPathBlock', text);
+    }
+
+    function renderRuntimeStability(runtime) {
+      const warnings = runtime?.warnings || [];
+      let text = `Overall: ${runtime?.overall || 'unknown'}`;
+      text += `\nWarnings: ${warnings.length}`;
+      if (runtime?.browser?.context?.preferred_browser) text += `\nPreferred browser: ${runtime.browser.context.preferred_browser}`;
+      if (runtime?.desktop?.active?.window?.title) text += `\nActive desktop: ${runtime.desktop.active.window.title}`;
+      if (warnings.length) text += `\nTop warning: ${warnings[0]}`;
+      setText('runtimeBlock', text);
+    }
+
+    function renderAcceptanceStatus(acceptance) {
+      let text = `history=${acceptance?.history_count ?? 0}`;
+      if (acceptance?.latest?.overall) {
+        text = `overall=${acceptance.latest.overall} • score=${acceptance.latest.score ?? '--'} • blockers=${acceptance.latest.blocker_count ?? 0}`;
+        if (acceptance.latest.comparison?.blocker_delta !== undefined) text += `\nΔ blockers: ${acceptance.latest.comparison.blocker_delta}`;
+      }
+      if (acceptance?.ready_for_phase_5_12 !== undefined) text += `\nReady for 5.12: ${acceptance.ready_for_phase_5_12 ? 'yes' : 'no'}`;
+      if (acceptance?.blockers?.length) text += `\nTop blocker: ${acceptance.blockers[0]}`;
+      if (acceptance?.next_action) text += `\nNext: ${acceptance.next_action}`;
+      setText('acceptanceBlock', text);
+    }
+
     function renderStatusBar(health, models) {
       const root = document.getElementById('statusBar');
       root.innerHTML = '';
@@ -1360,6 +1585,8 @@ def app_shell() -> str:
       if (selectedModel.name) modelText += `\nSelected model: ${selectedModel.name}`;
       const ggufCount = models.discovered?.count ?? 0;
       modelText += `\nLocal GGUFs found: ${ggufCount}`;
+      modelText += `\nLoaded model count: ${models.loaded_models?.count ?? 0}`;
+      if (models.consistency?.overall) modelText += `\nConsistency: ${models.consistency.overall}`;
       if (models.next_action) modelText += `\nNext: ${models.next_action}`;
       setText('modelBlock', modelText);
 
@@ -1371,9 +1598,13 @@ def app_shell() -> str:
 
       const maintenance = state.maintenance || {};
       const doctor = maintenance.doctor || {};
+      const verification = maintenance.verification || {};
       let doctorText = `overall=${doctor.overall || 'unknown'} • pass=${doctor.counts?.pass ?? 0} warn=${doctor.counts?.warn ?? 0} fail=${doctor.counts?.fail ?? 0}`;
       if (doctor.next_action) doctorText += `\nNext: ${doctor.next_action}`;
       setText('maintenanceDoctorBlock', doctorText);
+      let verificationText = `overall=${verification.overall || 'unknown'} • pass=${verification.counts?.pass ?? 0} warn=${verification.counts?.warn ?? 0} fail=${verification.counts?.fail ?? 0}`;
+      if (verification.next_action) verificationText += `\nNext: ${verification.next_action}`;
+      setText('maintenanceVerificationBlock', verificationText);
 
       let databaseText = database.plain_english || 'Database status unavailable.';
       if (database.exists) {
@@ -1473,6 +1704,37 @@ def app_shell() -> str:
       await refreshState();
     }
 
+    async function verifyModelRuntime(slot) {
+      const payload = { slot, prompt: `Reply with exactly: SHELL ${slot.toUpperCase()} MODEL TEST`, expected: `SHELL ${slot.toUpperCase()} MODEL TEST` };
+      const result = await safeApi('/models/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Model runtime verification failed', result.error || result.reply || 'unknown error');
+        showToast(`Model verify ${slot} failed.`, 'error');
+        appendEntry('model-verify', JSON.stringify(result, null, 2), true);
+        return;
+      }
+      appendEntry('model-verify', JSON.stringify(result, null, 2));
+      showToast(`Model verify ${slot} passed.`, 'info');
+      pushMaintenanceOp('model_verify', `${slot}:${result.model_name}`);
+      await refreshState();
+    }
+
+    async function unloadModelRuntime() {
+      const result = await safeApi('/models/unload', { method: 'POST' });
+      if (result.error || result.ok === false) {
+        pushErrorRecord('Unload model runtime failed', result.error || 'unknown error');
+        showToast('Unload model runtime failed.', 'error');
+        return;
+      }
+      showToast(`Unloaded ${result.unloaded_count || 0} in-process models.`, 'info');
+      pushMaintenanceOp('model_unload', result.unloaded_count || 0);
+      await refreshState();
+    }
+
     async function backupDatabase() {
       const result = await safeApi('/database/backup', {
         method: 'POST',
@@ -1505,10 +1767,14 @@ def app_shell() -> str:
 
     async function refreshState() {
       const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
-      const [health, state, voice] = await Promise.all([
+      const [health, state, voice, chatPing, shellBootstrap, shellDoctor, acceptanceStatus] = await Promise.all([
         safeApi('/health'),
         safeApi(`/shell/state${qs}`),
         safeApi('/voice/status'),
+        safeApi('/chat/ping'),
+        safeApi('/shell/bootstrap'),
+        safeApi('/shell/doctor'),
+        safeApi('/acceptance/status'),
       ]);
 
       if (!voice.error) {
@@ -1533,7 +1799,7 @@ def app_shell() -> str:
           setComposerStatus('Recovery mode: using cached shell state.');
           return;
         }
-        setComposerStatus('Shell state failed to load.');
+        setShellReady(false, 'Shell state failed to load.');
         renderStatusBar(health || {}, latestShellState?.models || {});
         return;
       }
@@ -1542,6 +1808,11 @@ def app_shell() -> str:
       pushReconnectEvent('refresh_ok', 'Live shell state refreshed successfully.');
       cacheShellState(state);
       renderState(state, health);
+      renderShellPath(health || {}, chatPing || {}, shellBootstrap || {}, shellDoctor || {});
+      renderRuntimeStability(state.runtime || {});
+      renderAcceptanceStatus(acceptanceStatus || {});
+      const ready = !chatPing?.error && !!chatPing?.chat_ready;
+      setShellReady(ready, ready ? '' : 'Chat path is not ready yet.');
     }
 
     async function bootShell() {
@@ -1549,6 +1820,13 @@ def app_shell() -> str:
       applyMaintenancePrefs();
       renderErrorDrawer();
       setComposerStatus('Booting shell…');
+      const bootstrap = await safeApi('/shell/bootstrap');
+      if (!bootstrap.error) {
+        renderBootstrap(bootstrap);
+        if (bootstrap.state_hygiene?.changed) {
+          showToast('JARVIS normalized stale remembered state during shell boot.', 'info');
+        }
+      }
       await refreshState();
       await autoWarmStartIfNeeded();
       promptInput.focus();

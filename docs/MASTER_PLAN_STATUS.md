@@ -226,10 +226,9 @@ Examples:
 - /do <goal>
 
 ## Immediate next sprint focus
-1. validate the hardened shell send/receive path on the real Windows machine and capture any remaining prompt-delivery issues
-2. validate cached-shell recovery, startup diagnostics banner, maintenance drawer, maintenance previews, custom cleanup controls, and error drawer behavior on the real Windows machine
-3. run the expanded Windows validation matrix for Chrome / Edge / Brave / Firefox and capture real launch results
-4. validate desktop focus/undo behavior with the richer `focus_verification` diagnostics on the real Windows machine
-5. validate auto/local GGUF model selection plus `preload` / warm-start behavior on the real Windows machine
-6. validate database backup/restore/vacuum, session cleanup presets, recovery-pack export/import, and audit rotate/prune/archive-preview/delete flows over longer usage
-7. keep improving browser/runtime fallbacks so links and previews are always useful
+1. begin **5.12.1 shell UX cleanup**
+2. begin **5.12.2 maintenance UX cleanup**
+3. begin **5.12.3 daily-driver polish + defaults**
+4. use the final acceptance blocker list from 5.11.5 as the input for 5.12 polish priorities
+5. defer AirLLM-style layer/offload inference exploration until after **Phase 11**
+6. keep Laravel/PHP out of the core runtime path for now so the stack stays clean and modular

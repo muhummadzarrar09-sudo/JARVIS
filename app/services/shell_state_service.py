@@ -7,15 +7,56 @@ from app.services.memory import memory_service
 from app.services.model_service import model_service
 from app.services.progress_service import progress_service
 from app.services.recovery_service import recovery_service
+from app.services.runtime_stability_service import runtime_stability_service
 from app.services.maintenance_service import maintenance_service
 from app.services.maintenance_settings_service import maintenance_settings_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.task_service import task_service
 from app.services.validation_service import validation_service
+from app.services.wrapper_state_service import wrapper_state_service
 
 
 class ShellStateService:
+    def bootstrap(self) -> dict[str, Any]:
+        hygiene = wrapper_state_service.sanitize_all()
+        models = model_service.status()
+        doctor = maintenance_service.doctor()
+        return {
+            "ok": True,
+            "app_name": "JARVIS Shell",
+            "state_hygiene": hygiene,
+            "models": {
+                "provider": (models.get("provider") or {}).get("effective_provider"),
+                "selected_model": ((models.get("provider") or {}).get("selected_model") or {}).get("name"),
+                "loaded_count": (models.get("loaded_models") or {}).get("count", 0),
+            },
+            "maintenance_doctor": {
+                "overall": doctor.get("overall"),
+                "counts": doctor.get("counts"),
+                "next_action": doctor.get("next_action"),
+            },
+            "plain_english": "This is the shell bootstrap payload used to verify state hygiene and runtime readiness before the full shell snapshot loads.",
+            "next_action": doctor.get("next_action") or models.get("next_action"),
+        }
+
+    def doctor(self) -> dict[str, Any]:
+        hygiene = wrapper_state_service.hygiene_report()
+        validation = validation_service.report()
+        models = model_service.status()
+        database = database_service.status()
+        return {
+            "ok": True,
+            "state_hygiene": hygiene,
+            "validation_blockers": validation.get("blockers", []),
+            "model_provider": (models.get("provider") or {}).get("effective_provider"),
+            "selected_model": ((models.get("provider") or {}).get("selected_model") or {}).get("name"),
+            "database_integrity": database.get("integrity_check"),
+            "plain_english": "This is the shell doctor report for shell boot reliability and state correctness.",
+            "next_action": validation.get("next_steps", [None])[0],
+        }
+
     def snapshot(self, session_id: str | None = None) -> dict[str, Any]:
+        wrapper_state_service.sanitize_all()
         resolved_session_id = session_id
         if resolved_session_id and not memory_service.session_overview(resolved_session_id).get("ok"):
             resolved_session_id = memory_service.resolve_session_id(resolved_session_id)
@@ -33,9 +74,9 @@ class ShellStateService:
         audit_archives = audit_service.list_archives(limit=12)
         database_backups = database_service.list_backups(limit=12)
         database_history = audit_service.recent_by_types(["database_backup", "database_restore", "database_vacuum"], limit=12)
-        audit_history = audit_service.recent_by_types(["audit_rotate", "audit_prune"], limit=12)
+        audit_history = audit_service.recent_by_types(["audit_rotate", "audit_prune", "audit_archive_delete"], limit=12)
         session_history = audit_service.recent_by_types(["session_cleanup"], limit=12)
-        recovery_history = audit_service.recent_by_types(["maintenance_export_pack", "maintenance_import_pack", "maintenance_pack_preview"], limit=12)
+        recovery_history = audit_service.recent_by_types(["maintenance_export_pack", "maintenance_import_pack", "maintenance_pack_preview", "maintenance_pack_delete"], limit=12)
         maintenance_history_preview = maintenance_service.history(limit=30)
 
         return {
@@ -47,11 +88,17 @@ class ShellStateService:
             "focus": quick_actions_service.focus(),
             "project": app_wrapper_service.current_project_context(None),
             "browser": app_wrapper_service.current_browser_context(),
+            "runtime": runtime_stability_service.summary(),
             "models": models_status,
             "database": database_status,
+            "shell": {
+                "bootstrap": self.bootstrap(),
+                "doctor": self.doctor(),
+            },
             "maintenance": {
                 "database_backups": database_backups,
                 "doctor": maintenance_service.doctor(),
+                "verification": maintenance_service.verification_summary(limit=5),
                 "settings": maintenance_settings_service.get_settings(),
                 "history_preview": maintenance_history_preview,
                 "database_history": database_history,

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bravo1"
+version = "0.1.0"
+description = "BRAVO-1 local-first executive operator shell"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  {name = "BRAVO-1"}
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[project.scripts]
+bravo1 = "bravo1.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "app"}
+
+[tool.setuptools.packages.find]
+where = ["app"]

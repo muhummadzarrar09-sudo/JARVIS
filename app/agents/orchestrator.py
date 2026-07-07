@@ -12,6 +12,7 @@ from app.services.model_service import model_service
 from app.services.operator_mode import operator_mode_service
 from app.services.process_tool import process_tool
 from app.services.progress_service import progress_service
+from app.services.project_intelligence_service import project_intelligence_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.shell_tool import shell_tool
 from app.services.task_service import task_service
@@ -70,7 +71,10 @@ class Orchestrator:
         if lowered in {"what can you do", "show examples", "starter commands", "help me start", "help me", "show starter guide"}:
             return "quick_guide", "guide", quick_actions_service.guide()
 
-        if lowered in {"what should i do next", "what next", "show next steps", "show me what to do next", "show me where to start", "where should i start", "get me started"}:
+        if lowered in {"what should i do now", "what do i do now", "what matters now", "what matters right now", "what should i do next", "what next", "show me what to do next", "show me where to start", "where should i start"}:
+            return "quick_brief", "brief", quick_actions_service.executive_brief()
+
+        if lowered in {"show next steps", "get me started"}:
             return "quick_next_steps", "guide", quick_actions_service.next_steps()
 
         if lowered in {"show me today", "today", "give me my day", "show me my day", "how does my day look"}:
@@ -95,10 +99,10 @@ class Orchestrator:
             return "phase4_status", "phase4", progress_service.phase4_status()
 
         if lowered in {"show me today's focus", "what should i focus on", "focus me", "show my focus", "what should i work on right now", "show me my focus"}:
-            return "quick_focus", "guide", quick_actions_service.focus()
+            return "quick_brief", "brief", quick_actions_service.executive_brief()
 
-        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work", "take me back to my last work", "open my last project"}:
-            return "app_recipe", "project.resume", app_wrapper_service.run_recipe("project.resume")
+        if lowered in {"help me continue where i left off", "continue where i left off", "continue my work", "take me back to my last work", "open my last project", "resume work", "resume my work", "get me back to work"}:
+            return "project_resume_packet", "project", project_intelligence_service.resume_work_packet(None)
 
         if lowered in {"show me recent work", "what was i doing", "where did i leave off"}:
             return "quick_recent_work", "recent", quick_actions_service.recent_work_summary()
@@ -184,6 +188,23 @@ class Orchestrator:
             if raw_id.isdigit():
                 return "task_reopen", raw_id, task_service.update_status(int(raw_id), "open")
 
+        if lowered.startswith("project idea "):
+            text_value = normalized[len("project idea "):].strip()
+            return "project_capture", "idea", project_intelligence_service.capture("idea", text_value)
+
+        if lowered.startswith("project blocker "):
+            text_value = normalized[len("project blocker "):].strip()
+            return "project_capture", "blocker", project_intelligence_service.capture("blocker", text_value)
+
+        if lowered.startswith("project follow up ") or lowered.startswith("project follow-up "):
+            prefix = "project follow up " if lowered.startswith("project follow up ") else "project follow-up "
+            text_value = normalized[len(prefix):].strip()
+            return "project_capture", "follow_up", project_intelligence_service.capture("follow_up", text_value)
+
+        if lowered.startswith("project note "):
+            text_value = normalized[len("project note "):].strip()
+            return "project_capture", "note", project_intelligence_service.capture("note", text_value)
+
         if lowered in {"show wrapper status", "show wrappers", "wrapper status"}:
             return "app_status", "apps", app_wrapper_service.wrapper_status(None)
 
@@ -193,11 +214,14 @@ class Orchestrator:
         if lowered in {"run doctor", "show doctor"}:
             return "app_doctor", "apps", app_wrapper_service.wrapper_doctor(None)
 
-        if lowered in {"show my project", "project info", "what project is this", "inspect project"}:
-            return "app_project_context", "project", app_wrapper_service.current_project_context(None)
+        if lowered in {"show my project", "project info", "what project is this", "inspect project", "what is my current project", "current project"}:
+            return "project_current", "project", project_intelligence_service.current(None)
 
         if lowered in {"open browser", "start browser"}:
-            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target="https://example.com")
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target="https://example.com", launch_mode="external")
+
+        if lowered in {"open controlled browser", "open managed browser", "start controlled browser"}:
+            return "app_ensure", "browser_controlled", app_wrapper_service.ensure_app("browser", target="https://example.com", launch_mode="playwright_managed")
 
         if lowered in {"use default browser", "reset browser preference", "browser auto"}:
             return "browser_preference", "auto", app_wrapper_service.set_browser_preference(None)
@@ -227,11 +251,20 @@ class Orchestrator:
 
         if lowered.startswith("open browser to "):
             target = normalized[len("open browser to "):].strip()
-            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target)
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target, launch_mode="external")
+
+        if lowered.startswith("open controlled browser to ") or lowered.startswith("open managed browser to "):
+            prefix = "open controlled browser to " if lowered.startswith("open controlled browser to ") else "open managed browser to "
+            target = normalized[len(prefix):].strip()
+            return "app_ensure", "browser_controlled", app_wrapper_service.ensure_app("browser", target=target, launch_mode="playwright_managed")
 
         if lowered.startswith("browse to "):
             target = normalized[len("browse to "):].strip()
-            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target)
+            return "app_ensure", "browser", app_wrapper_service.ensure_app("browser", target=target, launch_mode="external")
+
+        if lowered.startswith("browse in controlled browser to "):
+            target = normalized[len("browse in controlled browser to "):].strip()
+            return "app_ensure", "browser_controlled", app_wrapper_service.ensure_app("browser", target=target, launch_mode="playwright_managed")
 
         if lowered.startswith("search for "):
             query = normalized[len("search for "):].strip()
@@ -715,7 +748,11 @@ class Orchestrator:
         status = "✅ Success" if ok else ("⚠ Partial" if ok is None else "❌ Could not complete")
 
         summary = None
-        if isinstance(data.get("plain_english"), str) and data.get("plain_english"):
+        if tool_name == "quick_brief":
+            headline = data.get("headline") or data.get("primary_action") or "Executive brief"
+            why = data.get("why")
+            summary = headline if not why else f"{headline} — {why}"
+        elif isinstance(data.get("plain_english"), str) and data.get("plain_english"):
             summary = data.get("plain_english")
         elif tool_name in {"task_create", "task_done", "task_reopen", "task_in_progress", "task_next", "task_current"}:
             if data.get("title"):
@@ -724,6 +761,12 @@ class Orchestrator:
                 summary = f"Found {len(data.get('items', []))} task item(s)."
         elif tool_name == "session_list" and isinstance(data.get('items'), list):
             summary = f"Found {len(data.get('items', []))} recent session(s)."
+        elif tool_name == "project_current":
+            summary = f"Current project: {data.get('path') or 'unknown'}"
+        elif tool_name == "project_resume_packet":
+            summary = f"Resume pack ready for: {data.get('path') or 'current project'}"
+        elif tool_name == "project_capture":
+            summary = data.get("plain_english") or "Saved the project capture."
         elif tool_name == "quick_recent_work":
             summary = "Here is a simple summary of your recent work."
         elif tool_name == "quick_setup":
@@ -778,6 +821,14 @@ class Orchestrator:
             tip = "Try: show me the current page, search for something, search this site for something, or open browser to a URL."
         elif tool_name == "session_list":
             tip = "In the terminal, use /sessions and then /use 1 or /resume to switch sessions."
+        elif tool_name == "quick_brief":
+            tip = "You can say: open browser, review this project, work on next task, or show me recent work."
+        elif tool_name == "project_current":
+            tip = "You can say: resume work, open code here, open terminal here, or project idea ..."
+        elif tool_name == "project_resume_packet":
+            tip = "You can say: open readme, open code here, open terminal here, or open browser."
+        elif tool_name == "project_capture":
+            tip = "You can keep adding: project idea ..., project blocker ..., or project follow up ..."
         elif tool_name == "quick_today":
             tip = "You can say: show me today's focus, show my tasks, review this project, or start coding."
         elif tool_name == "quick_progress":
@@ -821,6 +872,32 @@ class Orchestrator:
         lines = [f"{status} — `{tool_name}` on `{target}`"]
         if summary:
             lines.append(summary)
+        if tool_name == "quick_brief":
+            if data.get("reentry_hint"):
+                lines.append(f"Re-entry: {data.get('reentry_hint')}")
+            if isinstance(data.get("secondary_actions"), list) and data.get("secondary_actions"):
+                lines.append("Also consider: " + ", ".join(data.get("secondary_actions", [])[:3]))
+            if isinstance(data.get("watchouts"), list) and data.get("watchouts"):
+                lines.append("Watchouts: " + " | ".join(data.get("watchouts", [])[:2]))
+            if data.get("confidence_label"):
+                lines.append(f"Confidence: {data.get('confidence_label')}")
+        elif tool_name == "project_current":
+            if data.get("reentry_hint"):
+                lines.append(f"Re-entry: {data.get('reentry_hint')}")
+            if data.get("confidence_label"):
+                lines.append(f"Confidence: {data.get('confidence_label')}")
+            if isinstance(data.get("actions"), list) and data.get("actions"):
+                lines.append("Best moves: " + ", ".join(data.get("actions", [])[:4]))
+        elif tool_name == "project_resume_packet":
+            if data.get("reentry_hint"):
+                lines.append(f"Re-entry: {data.get('reentry_hint')}")
+            packet = data.get("resume_packet") or []
+            if isinstance(packet, list) and packet:
+                lines.append("Resume steps:")
+                lines.extend(f"- {(step.get('label') or 'Step')}: {step.get('say') or ''}" for step in packet[:4] if isinstance(step, dict))
+        elif tool_name == "project_capture":
+            if data.get("project_path"):
+                lines.append(f"Project: {data.get('project_path')}")
         if data.get("next_action"):
             lines.append(f"Next: {data.get('next_action')}")
         if isinstance(data.get("manual_steps"), list) and data.get("manual_steps"):
@@ -828,6 +905,8 @@ class Orchestrator:
             lines.extend(f"- {step}" for step in data.get("manual_steps", [])[:6])
         if tip:
             lines.append(f"Tip: {tip}")
+        if tool_name in {"quick_brief", "quick_today", "quick_focus", "project_current", "project_resume_packet", "project_capture"}:
+            return "\n".join(lines)
         lines.append("Details:")
         lines.append(pretty)
         return "\n".join(lines)

@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import webbrowser
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -150,21 +152,33 @@ class BrowserTool:
         )
         return candidates
 
+    def _best_external_candidate(self, preferred_browser: str | None = None) -> dict[str, Any] | None:
+        for candidate in self._ordered_candidates(preferred_browser=preferred_browser):
+            if candidate.get("name") == "playwright_chromium":
+                continue
+            if candidate.get("executable_path"):
+                return candidate
+        return None
+
     def available_browsers(self) -> dict[str, Any]:
         detected = self._detect_candidates()
         preference = self._preference_list()
         ordered = self._ordered_candidates()
         default_candidate = ordered[0] if ordered else None
+        default_external_candidate = self._best_external_candidate()
         items = []
         for candidate in detected:
             name = candidate["name"]
+            supports_external_launch = bool(candidate.get("executable_path")) and name != "playwright_chromium"
             item = {
                 **candidate,
                 "display_name": self._display_name(name),
                 "available": bool(candidate.get("executable_path")) or name == "playwright_chromium",
                 "is_fallback": name == "playwright_chromium",
+                "supports_external_launch": supports_external_launch,
                 "preference_rank": (preference.index(name) + 1) if name in preference else None,
                 "selected_by_default": bool(default_candidate and default_candidate.get("name") == name),
+                "selected_by_default_external": bool(default_external_candidate and default_external_candidate.get("name") == name),
             }
             items.append(item)
         return {
@@ -173,6 +187,7 @@ class BrowserTool:
             "items": items,
             "count": len(items),
             "default_candidate": default_candidate,
+            "default_external_candidate": default_external_candidate,
         }
 
     def _ordered_candidates(self, preferred_browser: str | None = None) -> list[dict[str, Any]]:
@@ -429,6 +444,80 @@ class BrowserTool:
                 "browser_name": self._current_browser_name,
             }
 
+
+    def launch_external_url(self, url: str, browser_name: str | None = None) -> dict[str, Any]:
+        if not settings.allow_browser_tool:
+            return {"ok": False, "error": "Browser tool is disabled in config."}
+        if not url.strip():
+            return {"ok": False, "error": "URL is required."}
+
+        requested_browser = self._normalize_browser_name(browser_name)
+        ordered_candidates = self._ordered_candidates(preferred_browser=requested_browser)
+        attempted_candidates: list[str] = []
+        errors: list[dict[str, Any]] = []
+
+        for position, candidate in enumerate(ordered_candidates, start=1):
+            name = candidate.get("name")
+            executable_path = candidate.get("executable_path")
+            if not name or name == "playwright_chromium" or not executable_path:
+                continue
+            attempted_candidates.append(name)
+            try:
+                subprocess.Popen([str(executable_path), url])
+                return {
+                    "ok": True,
+                    "message": "Opened URL in an external browser.",
+                    "plain_english": f"JARVIS opened this in {self._display_name(name)}.",
+                    "mode": "external",
+                    "url": url,
+                    "browser_name": name,
+                    "selected_browser": name,
+                    "requested_browser": requested_browser,
+                    "source": candidate.get("source"),
+                    "attempted_candidates": attempted_candidates,
+                    "selected_candidate_rank": position,
+                    "fallback_used": bool(requested_browser and requested_browser != name),
+                    "launch_method": "executable",
+                    "next_action": "If you want JARVIS to read the page too, say: show me the current page",
+                }
+            except Exception as e:
+                errors.append(
+                    {
+                        "candidate": name,
+                        "source": candidate.get("source"),
+                        "error": str(e),
+                    }
+                )
+
+        try:
+            opened = webbrowser.open(url, new=2, autoraise=True)
+            if opened:
+                return {
+                    "ok": True,
+                    "message": "Opened URL in the system default browser.",
+                    "plain_english": "JARVIS opened this in your system default browser.",
+                    "mode": "external",
+                    "url": url,
+                    "browser_name": requested_browser,
+                    "selected_browser": requested_browser,
+                    "requested_browser": requested_browser,
+                    "source": "system_default",
+                    "attempted_candidates": attempted_candidates,
+                    "fallback_used": True,
+                    "launch_method": "system_default",
+                    "next_action": "If you want JARVIS to read the page too, say: show me the current page",
+                }
+        except Exception as e:
+            errors.append({"candidate": "system_default", "source": "webbrowser", "error": str(e)})
+
+        return {
+            "ok": False,
+            "error": "No external browser candidate could be launched.",
+            "requested_browser": requested_browser,
+            "attempted_candidates": attempted_candidates,
+            "errors": errors,
+        }
+
     def back(self) -> dict[str, Any]:
         ok, result = self._ensure_page()
         if not ok:
@@ -582,13 +671,49 @@ class BrowserTool:
 
         return {
             "ok": True,
+            "mode": "playwright_managed",
             "available": available,
             "requested_names": requested_names,
             "url": url,
             "items": results,
             "warning_count": len(warnings),
             "warnings": warnings,
-            "plain_english": "This is the browser launch validation matrix across the requested browser candidates.",
+            "plain_english": "This is the managed browser launch validation matrix across the requested browser candidates.",
+            "next_action": warnings[0] if warnings else None,
+        }
+
+    def validate_external_candidates(
+        self,
+        browser_names: list[str] | None = None,
+        url: str | None = None,
+    ) -> dict[str, Any]:
+        available = self.available_browsers()
+        default_name = ((available.get("default_external_candidate") or {}).get("name")) or "system_default"
+        requested_names = browser_names or [default_name]
+        target_url = (url or "https://example.com").strip()
+        results: list[dict[str, Any]] = []
+
+        for raw_name in requested_names:
+            normalized = self._normalize_browser_name(raw_name)
+            candidate_name = normalized or ("system_default" if str(raw_name).strip().lower() in {"", "default", "auto", "system", "system_default"} else str(raw_name).strip())
+            launch_result = self.launch_external_url(target_url, browser_name=(None if candidate_name == "system_default" else normalized or raw_name))
+            results.append({"candidate": candidate_name, "launch": launch_result})
+
+        warnings = []
+        for item in results:
+            if not item.get("launch", {}).get("ok"):
+                warnings.append(f"{item.get('candidate')} failed to launch externally")
+
+        return {
+            "ok": True,
+            "mode": "external",
+            "available": available,
+            "requested_names": requested_names,
+            "url": target_url,
+            "items": results,
+            "warning_count": len(warnings),
+            "warnings": warnings,
+            "plain_english": "This is the external browser launch validation matrix across the requested browser candidates.",
             "next_action": warnings[0] if warnings else None,
         }
 

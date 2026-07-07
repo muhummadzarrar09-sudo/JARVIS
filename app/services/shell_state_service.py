@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 
 from app.services.app_wrapper_service import app_wrapper_service
@@ -10,8 +12,10 @@ from app.services.recovery_service import recovery_service
 from app.services.runtime_stability_service import runtime_stability_service
 from app.services.maintenance_service import maintenance_service
 from app.services.maintenance_settings_service import maintenance_settings_service
+from app.services.project_intelligence_service import project_intelligence_service
 from app.services.quick_actions_service import quick_actions_service
 from app.services.task_service import task_service
+from app.services.trusted_root_service import trusted_root_service
 from app.services.validation_service import validation_service
 from app.services.wrapper_state_service import wrapper_state_service
 
@@ -56,6 +60,8 @@ class ShellStateService:
         }
 
     def snapshot(self, session_id: str | None = None) -> dict[str, Any]:
+        started_at = perf_counter()
+        generated_at = datetime.now(UTC).isoformat()
         wrapper_state_service.sanitize_all()
         resolved_session_id = session_id
         if resolved_session_id and not memory_service.session_overview(resolved_session_id).get("ok"):
@@ -79,15 +85,21 @@ class ShellStateService:
         recovery_history = audit_service.recent_by_types(["maintenance_export_pack", "maintenance_import_pack", "maintenance_pack_preview", "maintenance_pack_delete"], limit=12)
         maintenance_history_preview = maintenance_service.history(limit=30)
 
+        duration_ms = round((perf_counter() - started_at) * 1000, 1)
         return {
             "ok": True,
+            "generated_at": generated_at,
+            "duration_ms": duration_ms,
             "session_id": resolved_session_id,
+            "brief": quick_actions_service.executive_brief(),
             "today": quick_actions_service.today_brief(),
             "progress": quick_actions_service.progress(),
             "setup": quick_actions_service.setup_summary(),
             "focus": quick_actions_service.focus(),
             "project": app_wrapper_service.current_project_context(None),
+            "project_intelligence": project_intelligence_service.current(None),
             "browser": app_wrapper_service.current_browser_context(),
+            "trusted_roots": trusted_root_service.summary(),
             "runtime": runtime_stability_service.summary(),
             "models": models_status,
             "database": database_status,

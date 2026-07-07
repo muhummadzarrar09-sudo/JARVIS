@@ -2,7 +2,9 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from app.services.app_wrapper_service import app_wrapper_service
+from app.services.executive_brief_service import executive_brief_service
 from app.services.memory import memory_service
+from app.services.project_intelligence_service import project_intelligence_service
 from app.services.task_service import task_service
 
 
@@ -18,9 +20,12 @@ class QuickActionsService:
                         {"say": "show my project", "does": "Inspect the current workspace and show project context."},
                         {"say": "review this project", "does": "Inspect the project and show or open the README."},
                         {"say": "resume project", "does": "Reopen the remembered project flow using wrappers."},
+                        {"say": "resume work", "does": "Show the stronger project resume packet for getting back into the live operating thread."},
                         {"say": "open readme", "does": "Open the README in VS Code if one exists."},
                         {"say": "show my project files", "does": "Open or preview the project folder contents."},
                         {"say": "show my setup blockers", "does": "Show the main issues stopping tools from working right now."},
+                        {"say": "project idea ...", "does": "Capture an idea against the current project context."},
+                        {"say": "project blocker ...", "does": "Capture a blocker against the current project context."},
                     ],
                 },
                 {
@@ -30,6 +35,7 @@ class QuickActionsService:
                         {"say": "start coding", "does": "Open code and terminal flows for the current project."},
                         {"say": "continue coding", "does": "Resume the last coding workspace and terminal context."},
                         {"say": "help me continue where I left off", "does": "Resume the remembered project flow."},
+                        {"say": "what should i do now", "does": "Get the executive brief for the most grounded next move right now."},
                         {"say": "show me what to do next", "does": "Suggest the next beginner-friendly actions."},
                         {"say": "show me today's focus", "does": "Show the most important thing to work on right now."},
                         {"say": "show me today", "does": "Show a simple day brief with tasks, project, and browser context."},
@@ -61,12 +67,12 @@ class QuickActionsService:
                 {
                     "name": "Browser",
                     "items": [
-                        {"say": "open browser", "does": "Open the managed browser session."},
+                        {"say": "open browser", "does": "Open your real external browser by default."},
                         {"say": "open browser to https://example.com", "does": "Open a specific URL."},
                         {"say": "search for local ai agents", "does": "Search the web."},
-                        {"say": "research local ai agents", "does": "Search and capture a text snapshot."},
+                        {"say": "research local ai agents", "does": "Open a controlled browser review and capture a text snapshot."},
                         {"say": "search this site for pricing", "does": "Search only within the current site you were viewing."},
-                        {"say": "show me the current page", "does": "Resume the current or remembered browser page."},
+                        {"say": "show me the current page", "does": "Resume the current or remembered page in controlled review mode."},
                         {"say": "show browser options", "does": "Show which installed browsers JARVIS can try to use."},
                     ],
                 },
@@ -99,39 +105,7 @@ class QuickActionsService:
         }
 
     def next_steps(self) -> dict[str, Any]:
-        project = app_wrapper_service.current_project_context(None)
-        task = task_service.next_task()
-        suggestions = [
-            "show my project",
-            "open readme",
-            "open code here",
-            "open terminal here",
-            "search for jarvis local assistant",
-        ]
-        if project.get("ok"):
-            summary = project.get("summary", {})
-            suggestions = ["show my project", "review this project", "resume project", "open code here", "open terminal here"]
-            if summary.get("readme"):
-                suggestions.insert(1, "open readme")
-        if task.get("ok") and task.get("title"):
-            if task.get("status") == "in_progress":
-                suggestions.insert(0, "complete current task")
-                suggestions.insert(1, "what am i doing now")
-            else:
-                suggestions.insert(0, "work on next task")
-        else:
-            suggestions.insert(0, "start my workday")
-        deduped = []
-        for item in suggestions:
-            if item not in deduped:
-                deduped.append(item)
-        items = deduped[:5]
-        return {
-            "ok": True,
-            "items": items,
-            "plain_english": "These are the simplest next things you can ask JARVIS to do.",
-            "next_action": items[0] if items else None,
-        }
+        return executive_brief_service.next_steps()
 
     def focus(self) -> dict[str, Any]:
         current = task_service.current_task()
@@ -166,18 +140,32 @@ class QuickActionsService:
             "recommended": self.next_steps().get("items", []),
         }
 
+    def executive_brief(self) -> dict[str, Any]:
+        return executive_brief_service.build()
+
+    def project_intelligence(self) -> dict[str, Any]:
+        return project_intelligence_service.current(None)
+
+    def resume_work_packet(self) -> dict[str, Any]:
+        return project_intelligence_service.resume_work_packet(None)
+
+    def project_capture(self, kind: str, text: str) -> dict[str, Any]:
+        return project_intelligence_service.capture(kind, text)
+
     def today_brief(self) -> dict[str, Any]:
         focus = self.focus()
         project = app_wrapper_service.current_project_context(None)
         browser = app_wrapper_service.current_browser_context()
         sessions = memory_service.list_sessions(limit=3)
         tasks = task_service.task_summary()
+        brief = self.executive_brief()
         next_steps = self.next_steps().get("items", [])
         return {
             "ok": True,
-            "headline": focus.get("headline"),
-            "plain_english": "This is your simple day snapshot: current focus, project context, browser state, and what to do next.",
-            "next_action": next_steps[0] if next_steps else None,
+            "headline": brief.get("headline") or focus.get("headline"),
+            "plain_english": "This is your simple day snapshot: what matters now, where your project stands, and the fastest next move.",
+            "next_action": brief.get("primary_action") or (next_steps[0] if next_steps else None),
+            "brief": brief,
             "focus": focus,
             "project": project if project.get("ok") else None,
             "browser": browser,

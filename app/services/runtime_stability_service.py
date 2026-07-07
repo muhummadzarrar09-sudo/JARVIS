@@ -13,16 +13,12 @@ class RuntimeStabilityService:
 
         warnings: list[str] = []
         item = doctor.get("item") or {}
-        if not item.get("ready"):
-            warnings.append("Browser automation is not ready.")
+        if not item.get("external_ready") and not item.get("managed_ready"):
+            warnings.append("Neither external browser launch nor controlled browser mode is ready.")
         if not (available.get("count") or 0):
             warnings.append("No browser candidates were detected.")
-        if context.get("preferred_browser") and not context.get("preferred_browser_running") and not context.get("started"):
-            warnings.append("Preferred browser is not currently running.")
-        if context.get("remembered_url") and not context.get("started"):
-            warnings.append("JARVIS remembers a browser page but no managed browser session is active.")
-        if context.get("active_browser_window") and not context.get("started"):
-            warnings.append("A real browser window exists, but JARVIS is not attached to a managed browser session yet.")
+        if context.get("preferred_browser") == "playwright_chromium" and not item.get("managed_ready"):
+            warnings.append("Browser preference points at Playwright Chromium, but controlled mode is not ready.")
 
         candidate_count = available.get("count") or 0
         installed_count = len([x for x in available.get("items", []) if x.get("executable_path")])
@@ -36,7 +32,7 @@ class RuntimeStabilityService:
             "context": context,
             "doctor": doctor,
             "warnings": warnings,
-            "plain_english": "This is the live browser-runtime stability summary.",
+            "plain_english": "This is the live browser-runtime stability summary with external-browser-first behavior.",
             "next_action": context.get("next_action") or (warnings[0] if warnings else None),
         }
 
@@ -45,8 +41,12 @@ class RuntimeStabilityService:
         browser_names: list[str] | None = None,
         url: str | None = None,
         headless: bool | None = None,
+        mode: str | None = None,
     ) -> dict[str, Any]:
-        return browser_tool.validate_candidates(browser_names=browser_names, url=url, headless=headless)
+        selected_mode = (mode or "external").strip().lower()
+        if selected_mode in {"managed", "controlled", "playwright", "playwright_managed"}:
+            return browser_tool.validate_candidates(browser_names=browser_names, url=url, headless=headless)
+        return browser_tool.validate_external_candidates(browser_names=browser_names, url=url)
 
     def desktop_summary(self) -> dict[str, Any]:
         active = desktop_tool.active_window()

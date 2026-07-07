@@ -46,12 +46,13 @@
 - orb UI
 - wake-word / always-listening pipeline
 
-## Phase 6 — Android Companion + Handoff
-**Outcome:** session follows you.
-- mobile-responsive UI first
-- LAN websocket sync
-- session checkpoint handoff
-- room-exit logic later
+## Phase 6 — Executive Operator + Global Reach
+**Outcome:** JARVIS becomes a real daily-use chief-of-staff style assistant.
+- real external browser by default for browse/search/open flows
+- stronger daily brief and "do this now" guidance
+- better current-project and next-action continuity
+- guarded reach beyond a single repo/workspace
+- speed + real-world bug-kill pass on the actual Windows machine
 
 ## Phase 7 — Product Hardening
 **Outcome:** personal tool becomes product-grade.
@@ -61,3 +62,11 @@
 - updater
 - installer
 - telemetry (local-first)
+
+## Phase 8 — Android Companion + Handoff
+**Outcome:** session follows you beyond the desk.
+- mobile-responsive companion UI
+- LAN/websocket continuity
+- paired-device auth
+- checkpoint/session handoff
+- room-exit / return logic later

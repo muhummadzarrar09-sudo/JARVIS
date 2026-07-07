@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from app.core.config import settings
+from app.services.trusted_root_service import trusted_root_service
 
 
 class WrapperStateService:
@@ -69,23 +70,15 @@ class WrapperStateService:
             issues.append("replaced_foreign_absolute_path")
             return ".", issues
 
-        base = self._workspace_root()
-        candidate = Path(raw)
-        try:
-            resolved = candidate.resolve() if candidate.is_absolute() else (base / candidate).resolve()
-        except Exception:
-            issues.append("replaced_unresolvable_path")
+        policy = trusted_root_service.resolve(raw)
+        if not policy.get("ok"):
+            issues.append("replaced_untrusted_path")
             return ".", issues
 
-        try:
-            rel = resolved.relative_to(base)
-        except ValueError:
-            issues.append("replaced_outside_workspace_path")
-            return ".", issues
-
-        normalized = "." if str(rel) == "." else str(rel)
+        normalized = policy.get("path") if not policy.get("inside_workspace") else policy.get("relative_to_root")
+        normalized = "." if normalized in {None, ""} else str(normalized)
         if normalized != raw:
-            issues.append("normalized_workspace_path")
+            issues.append("normalized_trusted_path")
         return normalized, issues
 
     def _sanitize_browser_name(self, value: Any) -> tuple[str | None, list[str]]:

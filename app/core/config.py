@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     allow_file_tool: bool = Field(default=True, alias="ALLOW_FILE_TOOL")
     workspace_root: Path = Field(default=Path("."), alias="WORKSPACE_ROOT")
+    trusted_global_roots: str = Field(default="", alias="TRUSTED_GLOBAL_ROOTS")
+    global_write_requires_confirmation: bool = Field(default=True, alias="GLOBAL_WRITE_REQUIRES_CONFIRMATION")
     max_file_read_bytes: int = Field(default=200000, alias="MAX_FILE_READ_BYTES")
 
     allow_browser_tool: bool = Field(default=True, alias="ALLOW_BROWSER_TOOL")

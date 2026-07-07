@@ -13,6 +13,7 @@ class AppActionRequest(BaseModel):
     target: str | None = None
     text: str | None = None
     exact: bool = False
+    launch_mode: str | None = None
 
 
 @router.get("/wrappers")
@@ -71,9 +72,9 @@ def app_action(payload: AppActionRequest) -> dict:
     elif action == "recipe":
         result = app_wrapper_service.run_recipe(payload.name or "", target=payload.target, text=payload.text)
     elif action == "open":
-        result = app_wrapper_service.open_app(payload.name or "", target=payload.target)
+        result = app_wrapper_service.open_app(payload.name or "", target=payload.target, launch_mode=payload.launch_mode)
     elif action == "ensure":
-        result = app_wrapper_service.ensure_app(payload.name or "", target=payload.target, exact=payload.exact)
+        result = app_wrapper_service.ensure_app(payload.name or "", target=payload.target, exact=payload.exact, launch_mode=payload.launch_mode)
     elif action == "focus":
         result = app_wrapper_service.focus_app(payload.name or "", exact=payload.exact)
     elif action == "note":
@@ -83,7 +84,7 @@ def app_action(payload: AppActionRequest) -> dict:
     elif action == "code":
         result = app_wrapper_service.open_path_in_vscode(payload.target or "")
     elif action == "browse":
-        result = app_wrapper_service.open_url_in_browser(payload.target or "")
+        result = app_wrapper_service.open_url_in_browser(payload.target or "", launch_mode=payload.launch_mode)
     else:
         result = {"ok": False, "error": f"Unknown app wrapper action: {payload.action}"}
 
@@ -95,6 +96,7 @@ def app_action(payload: AppActionRequest) -> dict:
             "target": payload.target,
             "text_present": bool(payload.text),
             "exact": payload.exact,
+            "launch_mode": payload.launch_mode,
             "result_ok": result.get("ok"),
         },
     )

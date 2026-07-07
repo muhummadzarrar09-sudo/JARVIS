@@ -133,15 +133,17 @@ Phase 5 completion estimate: **100.0%**
 - Desktop app transition: **4/4 complete (100.0%)**
   - done: desktop shell packaging plan, runtime validation harness for Windows testing, actual packaged desktop app wrapper starter, voice / orb shell integration starter
 
-### Phase 6 — Android / Handoff
-Status: groundwork only
-- checkpoints exist
-- session continuity primitives exist
+### Phase 6 — Executive Operator + Global Reach
+Status: implementation-complete
+- external real-browser-first behavior
+- stronger executive brief / do-this-now guidance
+- better current-project and next-action intelligence
+- guarded expansion beyond a single workspace
+- real-use speed and Windows bug-kill pass
 
-Still pending:
-- websocket/mobile companion
-- paired-device auth
-- room-exit / return handoff logic
+Still pending for real-world closure:
+- final real-machine validation against the latest shell
+- last-mile bug feedback from actual Windows daily use
 
 ## What exists right now for the user
 ### Technical commands
@@ -226,9 +228,8 @@ Examples:
 - /do <goal>
 
 ## Immediate next sprint focus
-1. begin **5.12.1 shell UX cleanup**
-2. begin **5.12.2 maintenance UX cleanup**
-3. begin **5.12.3 daily-driver polish + defaults**
-4. use the final acceptance blocker list from 5.11.5 as the input for 5.12 polish priorities
-5. defer AirLLM-style layer/offload inference exploration until after **Phase 11**
-6. keep Laravel/PHP out of the core runtime path for now so the stack stays clean and modular
+1. run the real Windows validation pass against the completed **Phase 6** implementation
+2. use that feedback for final bug-kill cleanup before Phase 7 expansion
+3. begin **Phase 7 product hardening** planning after validation is in
+4. defer AirLLM-style layer/offload inference exploration until after **Phase 11**
+5. keep Laravel/PHP out of the core runtime path for now so the stack stays clean and modular

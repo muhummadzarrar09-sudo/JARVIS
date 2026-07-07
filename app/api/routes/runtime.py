@@ -11,6 +11,7 @@ class BrowserValidationRequest(BaseModel):
     browsers: list[str] | None = None
     url: str | None = None
     headless: bool | None = None
+    mode: str | None = None
 
 
 class DesktopValidationRequest(BaseModel):
@@ -33,6 +34,7 @@ def runtime_browser_validate(payload: BrowserValidationRequest) -> dict:
         browser_names=payload.browsers,
         url=payload.url,
         headless=payload.headless,
+        mode=payload.mode,
     )
     audit_service.log_event(
         "runtime_browser_validate",
@@ -41,6 +43,7 @@ def runtime_browser_validate(payload: BrowserValidationRequest) -> dict:
             "warning_count": result.get("warning_count"),
             "url": payload.url,
             "browsers": payload.browsers,
+            "mode": payload.mode,
         },
     )
     return result

@@ -9,6 +9,7 @@ from app.services.browser_tool import browser_tool
 from app.services.desktop_tool import desktop_tool
 from app.services.file_tool import file_tool
 from app.services.process_tool import process_tool
+from app.services.trusted_root_service import trusted_root_service
 from app.services.wrapper_state_service import wrapper_state_service
 
 
@@ -48,7 +49,7 @@ class AppWrapperService:
                 "title_hint": "Chrome",
                 "supports": ["open", "focus", "ensure", "status", "open_url", "search", "research", "snapshot_url"],
                 "risk": "medium",
-                "notes": "Automation-managed browser session wrapper via Playwright.",
+                "notes": "Real external browser wrapper by default, with managed Playwright control available when needed.",
             },
             "terminal": {
                 "aliases": ["powershell", "shell"],
@@ -111,7 +112,7 @@ class AppWrapperService:
                 "aliases": ["search", "web.search"],
                 "inputs": ["query"],
                 "risk": "medium",
-                "notes": "Run a browser search using a direct DuckDuckGo results URL.",
+                "notes": "Run a browser search in the real external browser by default.",
             },
             "browser.site_search": {
                 "aliases": ["web.site_search", "site.search"],
@@ -129,13 +130,13 @@ class AppWrapperService:
                 "aliases": ["web.snapshot", "open.snapshot"],
                 "inputs": ["url?"],
                 "risk": "medium",
-                "notes": "Open a URL in the managed browser and snapshot visible page text.",
+                "notes": "Open a URL in controlled browser mode and snapshot visible page text.",
             },
             "browser.resume": {
                 "aliases": ["web.resume", "resumebrowser"],
                 "inputs": ["url?"],
                 "risk": "medium",
-                "notes": "Resume the current or last remembered browser page and capture context.",
+                "notes": "Resume the current or last remembered browser page in controlled mode and capture context.",
             },
             "project.inspect": {
                 "aliases": ["workspace.inspect", "project.scan"],
@@ -171,7 +172,7 @@ class AppWrapperService:
                 "aliases": ["page.review", "reviewpage"],
                 "inputs": ["url?"],
                 "risk": "medium",
-                "notes": "Review the current or remembered browser page with title/text context.",
+                "notes": "Review the current or remembered browser page with controlled title/text context.",
             },
             "project.starter": {
                 "aliases": ["workspace.start", "project.start"],
@@ -306,14 +307,14 @@ class AppWrapperService:
         return Path(settings.workspace_root).resolve()
 
     def _resolve_workspace_path(self, target: str | None = None) -> Path:
-        base = self._workspace_root()
         raw = self._default_path(target)
-        candidate = (base / raw).resolve() if not Path(raw).is_absolute() else Path(raw).resolve()
-        try:
-            candidate.relative_to(base)
-        except ValueError as e:
-            raise ValueError(f"Path escapes workspace root: {raw}") from e
-        return candidate
+        policy = trusted_root_service.resolve(raw)
+        if not policy.get("ok"):
+            raise ValueError(policy.get("error") or f"Path is not inside a trusted root: {raw}")
+        resolved = policy.get("resolved")
+        if not isinstance(resolved, Path):
+            raise ValueError(f"Could not resolve trusted path: {raw}")
+        return resolved
 
     def _project_summary(self, target: str | None = None) -> dict[str, Any]:
         try:
@@ -407,11 +408,7 @@ class AppWrapperService:
 
     def _readme_fallback(self, readme_path: str, summary: dict[str, Any], reason: str) -> dict[str, Any]:
         workspace_root = str(self._workspace_root())
-        try:
-            readme_rel = str(Path(readme_path).resolve().relative_to(self._workspace_root()))
-        except Exception:
-            readme_rel = readme_path
-        preview_result = file_tool.read_text(readme_rel)
+        preview_result = file_tool.read_text(readme_path)
         return {
             "ok": True,
             "fallback": "readme_preview",
@@ -549,11 +546,13 @@ class AppWrapperService:
         preference = available.get("preference", []) if available.get("ok") else []
         candidates = available.get("items", []) if available.get("ok") else []
         default_candidate = available.get("default_candidate") if available.get("ok") else None
-        preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name") or ((default_candidate or {}).get("name"))
+        default_external_candidate = available.get("default_external_candidate") if available.get("ok") else None
+        preferred_browser = remembered.get("preferred_browser") or remembered.get("last_browser_name") or ((default_external_candidate or {}).get("name")) or ((default_candidate or {}).get("name"))
         desktop_browser = self._detect_browser_windows()
         running_names = desktop_browser.get("running_browser_names", []) if desktop_browser.get("ok") else []
         preferred_window = desktop_browser.get("preferred_window") if desktop_browser.get("ok") else None
         preferred_running = bool(desktop_browser.get("preferred_running")) if desktop_browser.get("ok") else False
+        last_launch_mode = remembered.get("last_launch_mode") or "external"
         label_map = {
             "chrome": "Chrome",
             "msedge": "Edge",
@@ -569,23 +568,25 @@ class AppWrapperService:
             remembered_url = remembered.get("last_url") or remembered.get("last_target")
             active_browser = desktop_browser.get("active") if desktop_browser.get("ok") else None
             active_title = active_browser.get("title") if active_browser else None
-            plain = "No live browser session is running right now."
+            plain = "JARVIS is set to use your real external browser by default."
             next_action = "Say: open browser"
 
             if active_title and preferred_running and preferred_browser:
-                plain = f"{label_map.get(preferred_browser, preferred_browser)} is already open, but it is not yet under JARVIS automation control."
-                short_name = "edge" if preferred_browser == "msedge" else preferred_browser
-                next_action = f"Say: open {short_name}"
+                plain = f"{label_map.get(preferred_browser, preferred_browser)} is already open, and JARVIS can keep using it in external mode."
+                next_action = "Say: search for something or open browser to a URL"
             elif active_title:
-                plain = "A browser window is already open, but it is not yet under JARVIS automation control."
-                next_action = "Say: open chrome, open edge, or show browser options"
+                plain = "A real browser window is already open, and JARVIS can keep using external mode by default."
+                next_action = "Say: search for something, open browser to a URL, or show browser options"
             elif remembered_url:
-                plain = "No live browser session is open, but JARVIS remembers your last page."
-                next_action = "Say: show me the current page or resume browser"
+                plain = "No controlled browser session is open, but JARVIS remembers your last page and can reopen or review it."
+                next_action = "Say: open browser or show me the current page"
 
             return {
                 "ok": True,
                 "started": False,
+                "managed_session_started": False,
+                "default_mode": "external",
+                "last_launch_mode": last_launch_mode,
                 "url": None,
                 "title": None,
                 "text": None,
@@ -593,6 +594,7 @@ class AppWrapperService:
                 "preferred_browser": preferred_browser,
                 "preference": preference,
                 "default_candidate": default_candidate,
+                "default_external_candidate": default_external_candidate,
                 "available_browsers": candidates,
                 "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
                 "active_browser_window": active_browser,
@@ -609,6 +611,9 @@ class AppWrapperService:
         return {
             "ok": bool(title.get("ok") and text.get("ok")),
             "started": True,
+            "managed_session_started": True,
+            "default_mode": "external",
+            "last_launch_mode": "playwright_managed",
             "url": title.get("url") or state.get("url"),
             "title": title.get("title") or state.get("title"),
             "text": text.get("text"),
@@ -616,15 +621,17 @@ class AppWrapperService:
             "remembered_url": remembered.get("last_url") or remembered.get("last_target"),
             "preferred_browser": preferred_browser,
             "selected_browser": selected_browser,
+            "selected_launch_mode": "playwright_managed",
             "preference": preference,
             "default_candidate": default_candidate,
+            "default_external_candidate": default_external_candidate,
             "available_browsers": candidates,
             "detected_browser_windows": desktop_browser.get("items") if desktop_browser.get("ok") else [],
             "active_browser_window": desktop_browser.get("active") if desktop_browser.get("ok") else None,
             "preferred_browser_window": preferred_window,
             "running_browser_names": running_names,
             "preferred_browser_running": preferred_running,
-            "plain_english": "A browser session is currently available." if (title.get("ok") and text.get("ok")) else "A browser session is running, but some page details were unavailable.",
+            "plain_english": "A controlled browser session is currently available." if (title.get("ok") and text.get("ok")) else "A controlled browser session is running, but some page details were unavailable.",
             "next_action": "Say: show me the current page, search for something, or browser text",
         }
 
@@ -678,15 +685,20 @@ class AppWrapperService:
             if canonical == "browser":
                 playwright_installed = importlib.util.find_spec("playwright") is not None
                 available = browser_tool.available_browsers()
+                external_ready = bool(available.get("default_external_candidate")) or settings.allow_browser_tool
+                managed_ready = playwright_installed
                 items.append(
                     {
                         "name": canonical,
-                        "ready": playwright_installed,
-                        "notes": "Uses the preferred installed browser when possible, then falls back through the configured browser order.",
+                        "ready": external_ready or managed_ready,
+                        "external_ready": external_ready,
+                        "managed_ready": managed_ready,
+                        "notes": "Defaults to opening the real external browser first. Managed Playwright control is available when installed.",
                         "playwright_installed": playwright_installed,
                         "available_browsers": available.get("items", []),
                         "preference": available.get("preference", []),
                         "default_candidate": available.get("default_candidate"),
+                        "default_external_candidate": available.get("default_external_candidate"),
                         "status": tool_status.get("item"),
                         "context": browser_context,
                         "remembered_state": state,
@@ -820,7 +832,7 @@ class AppWrapperService:
     def _target_capable(self, canonical: str) -> bool:
         return canonical in {"browser", "explorer", "vscode", "terminal"}
 
-    def open_app(self, name: str, target: str | None = None, browser_name: str | None = None) -> dict[str, Any]:
+    def open_app(self, name: str, target: str | None = None, browser_name: str | None = None, launch_mode: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_name(name)
         if not canonical:
             return {"ok": False, "error": f"Unknown app wrapper: {name}"}
@@ -828,17 +840,33 @@ class AppWrapperService:
         if canonical == "browser":
             url = (target or "https://example.com").strip()
             chosen_browser = self._preferred_browser_name(browser_name)
-            result = browser_tool.open_url(url, browser_name=chosen_browser)
+            requested_mode = (launch_mode or "external").strip().lower()
+            if requested_mode in {"managed", "controlled", "playwright", "playwright_managed"}:
+                result = browser_tool.open_url(url, browser_name=chosen_browser)
+                actual_mode = "playwright_managed"
+            else:
+                result = browser_tool.launch_external_url(url, browser_name=chosen_browser)
+                actual_mode = result.get("mode") or "external"
             actual_browser = result.get("browser_name") or result.get("selected_browser") or chosen_browser
-            self._remember_wrapper(canonical, last_action="open", last_target=url, last_url=url, last_browser_name=actual_browser, last_result_ok=result.get("ok"))
+            self._remember_wrapper(
+                canonical,
+                last_action="open",
+                last_target=url,
+                last_url=url,
+                last_browser_name=actual_browser,
+                last_launch_mode=actual_mode,
+                last_result_ok=result.get("ok"),
+            )
             return {
                 "ok": result.get("ok", False),
                 "wrapper": canonical,
                 "target": url,
-                "mode": "playwright_managed",
+                "mode": actual_mode,
                 "requested_browser": chosen_browser,
                 "browser_name": actual_browser,
                 "result": result,
+                "plain_english": result.get("plain_english"),
+                "next_action": result.get("next_action"),
             }
 
         if canonical == "notepad":
@@ -894,7 +922,7 @@ class AppWrapperService:
             "result": result,
         }
 
-    def ensure_app(self, name: str, target: str | None = None, exact: bool = False, browser_name: str | None = None) -> dict[str, Any]:
+    def ensure_app(self, name: str, target: str | None = None, exact: bool = False, browser_name: str | None = None, launch_mode: str | None = None) -> dict[str, Any]:
         canonical = self._normalize_name(name)
         if not canonical:
             return {"ok": False, "error": f"Unknown app wrapper: {name}"}
@@ -912,21 +940,32 @@ class AppWrapperService:
 
         if canonical == "browser":
             url = (target or "https://example.com").strip()
-            open_result = self.open_url_in_browser(url, browser_name=browser_name)
+            open_result = self.open_url_in_browser(url, browser_name=browser_name, launch_mode=launch_mode)
             steps.append({"step": "open_or_navigate_browser", "result": open_result})
             result = {
                 "ok": self._steps_ok(steps),
                 "wrapper": canonical,
                 "target": url,
                 "workflow": "ensure",
-                "browser_name": browser_name,
+                "browser_name": open_result.get("browser_name") or browser_name,
+                "mode": open_result.get("mode") or launch_mode or "external",
                 "steps": steps,
+                "plain_english": open_result.get("plain_english"),
+                "next_action": open_result.get("next_action"),
             }
             if open_result.get("fallback"):
                 result["fallback"] = open_result.get("fallback")
                 result["reason"] = open_result.get("reason")
                 result["manual_steps"] = open_result.get("manual_steps")
-            self._remember_wrapper(canonical, last_action="ensure", last_result_ok=result.get("ok"), last_target=url, last_url=url, last_browser_name=browser_name)
+            self._remember_wrapper(
+                canonical,
+                last_action="ensure",
+                last_result_ok=result.get("ok"),
+                last_target=url,
+                last_url=url,
+                last_browser_name=result.get("browser_name"),
+                last_launch_mode=result.get("mode"),
+            )
             return result
 
         if target and self._target_capable(canonical):
@@ -1003,31 +1042,44 @@ class AppWrapperService:
             return fallback
         return self.open_app("vscode", target=path)
 
-    def open_url_in_browser(self, url: str, browser_name: str | None = None) -> dict[str, Any]:
+    def open_url_in_browser(self, url: str, browser_name: str | None = None, launch_mode: str | None = None) -> dict[str, Any]:
         clean_url = url.strip()
         if not clean_url:
             return {"ok": False, "error": "URL is required."}
         requested_browser = self._preferred_browser_name(browser_name)
+        desired_mode = (launch_mode or "external").strip().lower()
+        desired_mode = "playwright_managed" if desired_mode in {"managed", "controlled", "playwright", "playwright_managed"} else "external"
         doctor = self.wrapper_doctor("browser")
         item = doctor.get("item") or {}
-        if item and not item.get("ready"):
-            fallback = self._browser_link_fallback(clean_url, "Browser automation is not ready here, so JARVIS returned a manual link instead.", browser_name=requested_browser)
-            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_result_ok=fallback.get("ok"))
+
+        if item and desired_mode == "external" and not item.get("external_ready"):
+            fallback = self._browser_link_fallback(clean_url, "External browser launch is not ready here, so JARVIS returned a manual link instead.", browser_name=requested_browser)
+            fallback["mode"] = desired_mode
+            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_launch_mode=desired_mode, last_result_ok=fallback.get("ok"))
             return fallback
 
-        result = self.open_app("browser", target=clean_url, browser_name=requested_browser)
+        if item and desired_mode == "playwright_managed" and not item.get("managed_ready"):
+            fallback = self._browser_link_fallback(clean_url, "Controlled browser mode is not ready here, so JARVIS returned a manual link instead.", browser_name=requested_browser)
+            fallback["mode"] = desired_mode
+            fallback["next_action"] = f"Open this link manually: {clean_url}"
+            self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_launch_mode=desired_mode, last_result_ok=fallback.get("ok"))
+            return fallback
+
+        result = self.open_app("browser", target=clean_url, browser_name=requested_browser, launch_mode=desired_mode)
         if result.get("ok"):
             return result
 
         nested = result.get("result") if isinstance(result.get("result"), dict) else {}
-        reason = nested.get("error") or result.get("error") or "Browser automation could not open the page here."
-        fallback = self._browser_link_fallback(
-            clean_url,
-            f"Browser automation could not launch a controllable browser session here ({reason}).",
-            browser_name=requested_browser,
+        reason = nested.get("error") or result.get("error") or "Browser launch could not open the page here."
+        fallback_reason = (
+            f"JARVIS could not open the real browser here ({reason})."
+            if desired_mode == "external"
+            else f"JARVIS could not start the controlled browser session here ({reason})."
         )
+        fallback = self._browser_link_fallback(clean_url, fallback_reason, browser_name=requested_browser)
         fallback["launch_result"] = result
-        self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_result_ok=fallback.get("ok"))
+        fallback["mode"] = desired_mode
+        self._remember_wrapper("browser", last_url=clean_url, last_target=clean_url, last_browser_name=requested_browser, last_launch_mode=desired_mode, last_result_ok=fallback.get("ok"))
         return fallback
 
     def run_recipe(self, name: str, target: str | None = None, text: str | None = None) -> dict[str, Any]:
@@ -1155,7 +1207,7 @@ class AppWrapperService:
             if not query:
                 return {"ok": False, "error": "This recipe needs a query. Use app recipe: browser.search ::: your query"}
             url = f"https://duckduckgo.com/?q={quote_plus(query)}"
-            open_result = self.ensure_app("browser", target=url)
+            open_result = self.ensure_app("browser", target=url, launch_mode="external")
             steps.append({"step": "open_search_results", "result": open_result})
             if open_result.get("fallback") == "browser_link":
                 result = {
@@ -1169,12 +1221,26 @@ class AppWrapperService:
                     "next_action": open_result.get("next_action"),
                     "steps": steps,
                 }
-                self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=True)
+                self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_launch_mode="external", last_result_ok=True)
+                return result
+            if open_result.get("mode") == "external":
+                result = {
+                    "ok": self._steps_ok(steps),
+                    "recipe": canonical,
+                    "query": query,
+                    "url": url,
+                    "mode": "external",
+                    "browser_name": open_result.get("browser_name"),
+                    "plain_english": open_result.get("plain_english") or "JARVIS opened the search in your real browser.",
+                    "next_action": "If you want JARVIS to read the results too, say: research " + query,
+                    "steps": steps,
+                }
+                self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_launch_mode="external", last_result_ok=result.get("ok"))
                 return result
             title_result = browser_tool.title()
             steps.append({"step": "read_browser_title", "result": title_result})
-            result = {"ok": self._steps_ok(steps), "recipe": canonical, "query": query, "url": url, "steps": steps}
-            self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_result_ok=result.get("ok"))
+            result = {"ok": self._steps_ok(steps), "recipe": canonical, "query": query, "url": url, "mode": "playwright_managed", "steps": steps}
+            self._remember_wrapper("browser", last_recipe=canonical, last_query=query, last_url=url, last_target=url, last_launch_mode="playwright_managed", last_result_ok=result.get("ok"))
             return result
 
         if canonical == "browser.site_search":
@@ -1219,7 +1285,7 @@ class AppWrapperService:
                     return result
                 return {"ok": False, "error": "This recipe needs a query or an already-open browser page."}
             url = f"https://duckduckgo.com/?q={quote_plus(query)}"
-            open_result = self.ensure_app("browser", target=url)
+            open_result = self.ensure_app("browser", target=url, launch_mode="playwright_managed")
             steps.append({"step": "open_search_results", "result": open_result})
             if open_result.get("fallback") == "browser_link":
                 result = {
@@ -1254,7 +1320,7 @@ class AppWrapperService:
                     url = current.get("url")
                 else:
                     return {"ok": False, "error": "This recipe needs a URL. Use app recipe: browser.snapshot ::: https://example.com"}
-            open_result = self.ensure_app("browser", target=url)
+            open_result = self.ensure_app("browser", target=url, launch_mode="playwright_managed")
             steps.append({"step": "open_url", "result": open_result})
             if open_result.get("fallback") == "browser_link":
                 result = {

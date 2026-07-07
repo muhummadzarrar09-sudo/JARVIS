@@ -15,6 +15,11 @@ class FileReadRequest(BaseModel):
     path: str = Field(..., min_length=1)
 
 
+class FilePolicyRequest(BaseModel):
+    path: str = Field(..., min_length=1)
+    action: str = Field(default="read", min_length=1)
+
+
 class FileWriteRequest(BaseModel):
     path: str = Field(..., min_length=1)
     content: str = Field(default="")
@@ -31,7 +36,21 @@ def fs_list(payload: FileListRequest) -> dict:
 @router.post("/read")
 def fs_read(payload: FileReadRequest) -> dict:
     result = file_tool.read_text(payload.path)
-    audit_service.log_event("fs_read", {"path": payload.path, "result_ok": result.get("ok")})
+    audit_service.log_event("fs_read", {"path": payload.path, "result_ok": result.get("ok"), "scope": result.get("scope")})
+    return result
+
+
+@router.post("/policy")
+def fs_policy(payload: FilePolicyRequest) -> dict:
+    result = file_tool.policy(payload.path, action=payload.action)
+    audit_service.log_event("fs_policy", {"path": payload.path, "action": payload.action, "result_ok": result.get("ok"), "scope": result.get("scope")})
+    return result
+
+
+@router.get("/roots")
+def fs_roots() -> dict:
+    result = file_tool.roots_summary()
+    audit_service.log_event("fs_roots", {"result_ok": result.get("ok"), "count": result.get("count")})
     return result
 
 
@@ -40,7 +59,7 @@ def fs_write(payload: FileWriteRequest) -> dict:
     result = file_tool.write_text(payload.path, payload.content, append=payload.append)
     audit_service.log_event(
         "fs_write",
-        {"path": payload.path, "append": payload.append, "result_ok": result.get("ok")},
+        {"path": payload.path, "append": payload.append, "result_ok": result.get("ok"), "scope": result.get("scope")},
     )
     return result
 
@@ -48,5 +67,5 @@ def fs_write(payload: FileWriteRequest) -> dict:
 @router.post("/mkdir")
 def fs_mkdir(payload: FileListRequest) -> dict:
     result = file_tool.make_dir(payload.path)
-    audit_service.log_event("fs_mkdir", {"path": payload.path, "result_ok": result.get("ok")})
+    audit_service.log_event("fs_mkdir", {"path": payload.path, "result_ok": result.get("ok"), "scope": result.get("scope")})
     return result

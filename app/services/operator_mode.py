@@ -2,6 +2,15 @@ from typing import Any
 
 
 class OperatorModeService:
+    def _looks_global_path(self, text: str) -> bool:
+        lowered = (text or "").strip().lower()
+        return (
+            lowered.startswith("/")
+            or lowered.startswith("\\")
+            or (len(lowered) > 2 and lowered[1:3] == ':\\')
+            or (len(lowered) > 2 and lowered[1:3] == ':/')
+        )
+
     def __init__(self) -> None:
         self.high_risk_prefixes = [
             "shell:",
@@ -17,6 +26,7 @@ class OperatorModeService:
         self.medium_risk_prefixes = [
             "fs write:",
             "fs append:",
+            "fs mkdir:",
             "app ensure:",
             "app open:",
             "app recipe:",
@@ -76,6 +86,16 @@ class OperatorModeService:
 
         for prefix in self.medium_risk_prefixes:
             if lowered.startswith(prefix):
+                tail = raw[len(prefix):].strip() if raw.lower().startswith(prefix) else ""
+                global_write = prefix in {"fs write:", "fs append:"} and self._looks_global_path(tail)
+                global_mkdir = prefix == "fs mkdir:" and self._looks_global_path(tail)
+                if global_write or global_mkdir:
+                    return {
+                        "risk": "high",
+                        "label": prefix.rstrip(": "),
+                        "reason": "This command changes local state outside the main workspace and should be explicitly confirmed.",
+                        "requires_confirmation": True,
+                    }
                 return {
                     "risk": "medium",
                     "label": prefix.rstrip(": "),

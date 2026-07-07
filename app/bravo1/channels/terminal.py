@@ -8,7 +8,7 @@ class TerminalChannel:
         self.operator = operator
 
     def run(self) -> None:
-        print("BRAVO-1 terminal scaffold ready. Type `exit` to quit.\n")
+        print("BRAVO-1 terminal v0.2 ready. Type `exit` to quit. Use /help for commands.\n")
         while True:
             try:
                 message = input("you> ").strip()

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
+
+from bravo1.brain.obsidian import ObsidianBrain
+from bravo1.core.session import SessionManager, SessionState
+from bravo1.models.runtime import RuntimeBootstrap
 
 
 @dataclass(slots=True)
@@ -12,18 +16,49 @@ class ToolSpec:
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, sessions: SessionManager, brain: ObsidianBrain, runtime: RuntimeBootstrap) -> None:
+        self.sessions = sessions
+        self.brain = brain
+        self.runtime = runtime
         self._tools = [
             ToolSpec(name="session.inspect", description="Inspect current session state", risk="low"),
             ToolSpec(name="brain.read_active", description="Read active brain context", risk="low"),
+            ToolSpec(name="runtime.inspect", description="Inspect local runtime bootstrap status", risk="low"),
         ]
+        self._handlers: dict[str, Callable[[SessionState], dict[str, Any]]] = {
+            "session.inspect": self._session_inspect,
+            "brain.read_active": self._brain_read_active,
+            "runtime.inspect": self._runtime_inspect,
+        }
 
     def list_tools(self) -> list[ToolSpec]:
         return list(self._tools)
 
-    def execute(self, tool_name: str, **_: Any) -> dict[str, Any]:
+    def execute(self, tool_name: str, state: SessionState, **_: Any) -> dict[str, Any]:
+        handler = self._handlers.get(tool_name)
+        if not handler:
+            return {
+                "ok": False,
+                "tool": tool_name,
+                "error": "Unknown tool in the Week-1 scaffold.",
+            }
+        result = handler(state)
+        result.setdefault("tool", tool_name)
+        return result
+
+    def _session_inspect(self, state: SessionState) -> dict[str, Any]:
         return {
-            "ok": False,
-            "tool": tool_name,
-            "error": "Tool execution is not implemented yet in the Week-1 scaffold.",
+            "ok": True,
+            "snapshot": self.sessions.snapshot(state),
+            "plain_english": "This is the current BRAVO-1 session snapshot.",
         }
+
+    def _brain_read_active(self, _: SessionState) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "active_context": self.brain.read_active(),
+            "plain_english": "This is the active brain context currently injected into BRAVO-1 turns.",
+        }
+
+    def _runtime_inspect(self, _: SessionState) -> dict[str, Any]:
+        return self.runtime.status()

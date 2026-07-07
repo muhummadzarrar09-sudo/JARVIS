@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from bravo1.brain.obsidian import ObsidianBrain
+from bravo1.core.project import ProjectContinuity
 from bravo1.core.session import SessionManager, SessionState
 from bravo1.models.runtime import RuntimeBootstrap
+from bravo1.tools.shell import ShellTool
 
 
 @dataclass(slots=True)
@@ -16,19 +18,30 @@ class ToolSpec:
 
 
 class ToolRegistry:
-    def __init__(self, sessions: SessionManager, brain: ObsidianBrain, runtime: RuntimeBootstrap) -> None:
+    def __init__(
+        self,
+        sessions: SessionManager,
+        brain: ObsidianBrain,
+        runtime: RuntimeBootstrap,
+        project: ProjectContinuity,
+        shell: ShellTool,
+    ) -> None:
         self.sessions = sessions
         self.brain = brain
         self.runtime = runtime
+        self.project = project
+        self.shell = shell
         self._tools = [
             ToolSpec(name="session.inspect", description="Inspect current session state", risk="low"),
             ToolSpec(name="brain.read_active", description="Read active brain context", risk="low"),
             ToolSpec(name="runtime.inspect", description="Inspect local runtime bootstrap status", risk="low"),
+            ToolSpec(name="project.inspect", description="Inspect current project continuity state", risk="low"),
         ]
         self._handlers: dict[str, Callable[[SessionState], dict[str, Any]]] = {
             "session.inspect": self._session_inspect,
             "brain.read_active": self._brain_read_active,
             "runtime.inspect": self._runtime_inspect,
+            "project.inspect": self._project_inspect,
         }
 
     def list_tools(self) -> list[ToolSpec]:
@@ -62,3 +75,6 @@ class ToolRegistry:
 
     def _runtime_inspect(self, _: SessionState) -> dict[str, Any]:
         return self.runtime.status()
+
+    def _project_inspect(self, _: SessionState) -> dict[str, Any]:
+        return self.project.inspect()

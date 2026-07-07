@@ -17,6 +17,8 @@ def build_settings(tmp_path):
         runtime_host="127.0.0.1",
         runtime_fast_port=8080,
         runtime_main_port=8081,
+        shell_timeout_seconds=20,
+        model_request_timeout_seconds=1,
     )
 
 
@@ -42,8 +44,14 @@ def test_slash_commands_and_summary(tmp_path):
     project_result = operator.handle("/project BRAVO-1 rebuild")
     assert "Project set" in project_result["reply"]
 
+    project_inspect = operator.handle("/tool project.inspect")
+    assert "BRAVO-1 rebuild" in project_inspect["reply"]
+
     tool_result = operator.handle("/tool runtime.inspect")
     assert "fast.gguf" in tool_result["reply"]
+
+    run_result = operator.handle("/run echo bravo1")
+    assert "bravo1" in run_result["reply"].lower()
 
     summary_result = operator.handle("/summarize")
     assert "Session summary written" in summary_result["reply"]

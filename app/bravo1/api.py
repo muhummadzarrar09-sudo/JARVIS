@@ -33,6 +33,9 @@ class _APIHandler(BaseHTTPRequestHandler):
         if self.path == "/runtime":
             self._send_json(self.operator.runtime.status())
             return
+        if self.path == "/state":
+            self._send_json(self.operator.state_snapshot())
+            return
         if self.path == "/session":
             self._send_json({"ok": True, "session": self.operator.sessions.snapshot(state)})
             return
@@ -42,8 +45,17 @@ class _APIHandler(BaseHTTPRequestHandler):
         if self.path == "/project":
             self._send_json(self.operator.handle("/project"))
             return
+        if self.path == "/captures":
+            self._send_json(self.operator.handle("/captures"))
+            return
         if self.path == "/tools":
             self._send_json(self.operator.handle("/tools"))
+            return
+        if self.path == "/browser":
+            self._send_json(self.operator.handle("/browser-status"))
+            return
+        if self.path == "/windows":
+            self._send_json(self.operator.handle("/windows-status"))
             return
         self._send_json({"ok": False, "error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -59,6 +71,14 @@ class _APIHandler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": "Message is required"}, status=HTTPStatus.BAD_REQUEST)
                 return
             self._send_json(self.operator.handle(message))
+            return
+        if self.path == "/browser/open":
+            try:
+                payload = self._read_json()
+            except json.JSONDecodeError:
+                payload = {}
+            url = str(payload.get("url") or "").strip()
+            self._send_json(self.operator.handle(f"/browser {url}" if url else "/browser"))
             return
         if self.path == "/runtime/start":
             try:

@@ -7,8 +7,11 @@ Stand up the **new BRAVO-1 spine** fast.
 By end of Week 1 we should have:
 - importable Python package
 - terminal shell loop
+- thin local web shell bootstrap
+- local API bootstrap
 - session state working
 - active brain file integration
+- project continuity + capture path
 - operator skeleton returning structured replies
 - runtime profile docs/scripts ready for local GGUF serving
 
@@ -16,12 +19,16 @@ By end of Week 1 we should have:
 
 ## Workstream A — Core package
 ### Must finish
-- [ ] root `pyproject.toml`
-- [ ] `app/bravo1/` package skeleton
-- [ ] config loader
-- [ ] operator core
-- [ ] session store
-- [ ] terminal channel
+- [x] root `pyproject.toml`
+- [x] `app/bravo1/` package skeleton
+- [x] config loader
+- [x] operator core
+- [x] session store
+- [x] terminal channel
+- [x] structured response object
+- [x] local API bootstrap
+- [x] thin local web shell bootstrap
+- [x] state snapshot path for API/web surfaces
 
 ## Workstream B — Brain continuity
 ### Must finish
@@ -29,6 +36,7 @@ By end of Week 1 we should have:
 - [x] session summary path design
 - [x] project continuity placeholder hooks
 - [x] project capture path for notes / ideas / blockers
+- [x] auto-summary policy for repeated usage loops
 
 ## Workstream C — Runtime
 ### Must finish
@@ -38,6 +46,8 @@ By end of Week 1 we should have:
 - [x] first routing config notes
 - [x] runtime reachability checks
 - [x] runtime start/stop helper path
+- [x] runtime validation script path
+- [x] model client retry/format discipline
 
 ## Workstream D — Validation
 ### Must finish
@@ -45,6 +55,8 @@ By end of Week 1 we should have:
 - [x] CLI smoke test
 - [x] syntax compile pass
 - [x] operator command smoke test
+- [x] browser snapshot smoke test coverage
+- [x] runtime status shape smoke test coverage
 
 ---
 

@@ -81,11 +81,13 @@ Purpose:
 - keep repo patterns extractable
 - isolate Windows/browser/file concerns from the operator core
 
-Initial capabilities:
+Current capabilities:
 - file + project continuity
 - shell execution
-- local model routing
+- local model routing/client
 - memory/brain integration
+- browser adapter bootstrap with remembered external-browser state + text snapshot fetch
+- Windows adapter bootstrap with status + Windows window-enumeration path
 
 Later capabilities:
 - browser DOM operator
@@ -234,7 +236,10 @@ Take from Open Interpreter later:
 We are ready to build fast when:
 - the package imports cleanly
 - the CLI loop runs
+- the thin web shell runs
+- the local API runs
 - a session file is created
 - `brain/active.md` can be read
-- the operator returns a structured placeholder response
+- project continuity can be inspected and captured into
+- the operator returns a structured response object
 - runtime config is documented and scriptable

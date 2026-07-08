@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from bravo1.adapters.browser import BrowserAdapter
+from bravo1.adapters.windows import WindowsAdapter
 from bravo1.brain.obsidian import ObsidianBrain
 from bravo1.core.project import ProjectContinuity
 from bravo1.core.session import SessionManager, SessionState
@@ -25,23 +27,31 @@ class ToolRegistry:
         runtime: RuntimeBootstrap,
         project: ProjectContinuity,
         shell: ShellTool,
+        browser: BrowserAdapter | None = None,
+        windows: WindowsAdapter | None = None,
     ) -> None:
         self.sessions = sessions
         self.brain = brain
         self.runtime = runtime
         self.project = project
         self.shell = shell
+        self.browser = browser
+        self.windows = windows
         self._tools = [
             ToolSpec(name="session.inspect", description="Inspect current session state", risk="low"),
             ToolSpec(name="brain.read_active", description="Read active brain context", risk="low"),
             ToolSpec(name="runtime.inspect", description="Inspect local runtime bootstrap status", risk="low"),
             ToolSpec(name="project.inspect", description="Inspect current project continuity state", risk="low"),
+            ToolSpec(name="browser.inspect", description="Inspect remembered browser adapter state", risk="low"),
+            ToolSpec(name="windows.inspect", description="Inspect current Windows adapter status", risk="low"),
         ]
         self._handlers: dict[str, Callable[[SessionState], dict[str, Any]]] = {
             "session.inspect": self._session_inspect,
             "brain.read_active": self._brain_read_active,
             "runtime.inspect": self._runtime_inspect,
             "project.inspect": self._project_inspect,
+            "browser.inspect": self._browser_inspect,
+            "windows.inspect": self._windows_inspect,
         }
 
     def list_tools(self) -> list[ToolSpec]:
@@ -78,3 +88,13 @@ class ToolRegistry:
 
     def _project_inspect(self, _: SessionState) -> dict[str, Any]:
         return self.project.inspect()
+
+    def _browser_inspect(self, _: SessionState) -> dict[str, Any]:
+        if self.browser is None:
+            return {"ok": False, "error": "Browser adapter is not attached."}
+        return self.browser.inspect()
+
+    def _windows_inspect(self, _: SessionState) -> dict[str, Any]:
+        if self.windows is None:
+            return {"ok": False, "error": "Windows adapter is not attached."}
+        return self.windows.inspect()

@@ -11,3 +11,9 @@ class PromptPack:
     def read(self, name: str) -> str:
         path = self.prompt_dir / name
         return path.read_text(encoding="utf-8")
+
+    def system_operator(self) -> str:
+        return self.read("system_operator.txt")
+
+    def fallback_footer(self) -> str:
+        return self.read("fallback_footer.txt")

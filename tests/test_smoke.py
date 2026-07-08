@@ -1,7 +1,9 @@
 from pathlib import Path
 
+from bravo1.adapters.browser import BrowserAdapter
 from bravo1.config import Settings
 from bravo1.core.operator import Operator
+from bravo1.models.runtime import RuntimeBootstrap
 
 
 def build_settings(tmp_path):
@@ -19,6 +21,8 @@ def build_settings(tmp_path):
         runtime_main_port=8081,
         shell_timeout_seconds=20,
         model_request_timeout_seconds=1,
+        browser_fetch_timeout_seconds=2,
+        auto_summary_message_interval=4,
     )
 
 
@@ -52,11 +56,29 @@ def test_slash_commands_and_summary(tmp_path):
     tool_result = operator.handle("/tool runtime.inspect")
     assert "fast.gguf" in tool_result["reply"]
 
+    browser_tool_result = operator.handle("/tool browser.inspect")
+    assert "Browser status" in browser_tool_result["reply"] or "Tool result: browser.inspect" in browser_tool_result["reply"]
+
     run_result = operator.handle("/run echo bravo1")
     assert "bravo1" in run_result["reply"].lower()
 
     capture_result = operator.handle("/note remember the web shell bootstrap")
     assert "remember the web shell bootstrap" in capture_result["reply"].lower()
+
+    browser_result = operator.handle("/browser https://example.com")
+    assert "Opened browser URL" in browser_result["reply"] or "Browser action failed" in browser_result["reply"]
+
+    browser_status = operator.handle("/browser-status")
+    assert "Browser status" in browser_status["reply"]
+
+    html_path = tmp_path / "browser-page.html"
+    html_path.write_text("<html><head><title>Bravo Fetch</title></head><body><p>fetch works</p></body></html>", encoding="utf-8")
+    browser_fetch = operator.handle(f"/browser-fetch {html_path.as_uri()}")
+    assert "Browser fetch" in browser_fetch["reply"]
+    assert "Bravo Fetch" in browser_fetch["reply"]
+
+    windows_status = operator.handle("/windows-status")
+    assert "Windows adapter status" in windows_status["reply"]
 
     health_result = operator.handle("/web-health")
     assert "Runtime reachability" in health_result["reply"]
@@ -65,3 +87,23 @@ def test_slash_commands_and_summary(tmp_path):
     assert "Session summary written" in summary_result["reply"]
     summary_path = Path(summary_result["reply"].split(": ", 1)[1])
     assert summary_path.exists()
+
+
+def test_runtime_status_shapes(tmp_path):
+    settings = build_settings(tmp_path)
+    runtime = RuntimeBootstrap(settings)
+    status = runtime.status()
+    assert status["ok"] is True
+    assert status["fast"]["endpoint"].endswith("/v1/chat/completions")
+    assert "health" in status["fast"]
+    assert "health" in status["main"]
+
+
+def test_browser_fetch_snapshot(tmp_path):
+    adapter = BrowserAdapter(tmp_path / "browser", fetch_timeout_seconds=2)
+    html_path = tmp_path / "page.html"
+    html_path.write_text("<html><head><title>Bravo Page</title></head><body><h1>Hello</h1><p>World</p></body></html>", encoding="utf-8")
+    result = adapter.fetch_page(html_path.as_uri())
+    assert result["ok"] is True
+    assert result["title"] == "Bravo Page"
+    assert "Hello World" in result["text"]

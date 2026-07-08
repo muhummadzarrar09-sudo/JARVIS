@@ -10,17 +10,20 @@ Clean rebuild workspace for BRAVO-1.
 - Bash web shell: `./scripts/start-web-shell.sh`
 - PowerShell API: `./scripts/start-api.ps1`
 - Bash API: `./scripts/start-api.sh`
+- PowerShell validation: `./scripts/validate-runtime.ps1`
+- Bash validation: `./scripts/validate-runtime.sh`
 
 ### Direct Python
 - CLI: `PYTHONPATH=app python -m bravo1.cli`
 - Web shell: `PYTHONPATH=app python -m bravo1.web_main`
 - API: `PYTHONPATH=app python -m bravo1.api_main`
+- Validation: `PYTHONPATH=app python scripts/runtime_validation.py`
 
 ## Core dirs
 - `app/` application code
 - `runtime/` local model/runtime orchestration
 - `app/bravo1/prompts/` operator prompt pack files
-- `app/bravo1/adapters/` future browser/windows capability adapters
+- `app/bravo1/adapters/` browser/windows capability adapters
 - `shell/` shell UI/TUI/web surface
 - `research/` working research notes and extracted patterns
 - `evals/` evaluation sets and validation flows

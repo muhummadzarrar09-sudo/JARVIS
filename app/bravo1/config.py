@@ -19,6 +19,8 @@ class Settings:
     runtime_main_port: int
     shell_timeout_seconds: int
     model_request_timeout_seconds: int
+    browser_fetch_timeout_seconds: int
+    auto_summary_message_interval: int
 
     @classmethod
     def load(cls) -> "Settings":
@@ -39,6 +41,8 @@ class Settings:
             runtime_main_port=int(os.getenv("BRAVO1_RUNTIME_MAIN_PORT", "8081")),
             shell_timeout_seconds=int(os.getenv("BRAVO1_SHELL_TIMEOUT_SECONDS", "20")),
             model_request_timeout_seconds=int(os.getenv("BRAVO1_MODEL_REQUEST_TIMEOUT_SECONDS", "8")),
+            browser_fetch_timeout_seconds=int(os.getenv("BRAVO1_BROWSER_FETCH_TIMEOUT_SECONDS", "8")),
+            auto_summary_message_interval=max(0, int(os.getenv("BRAVO1_AUTO_SUMMARY_MESSAGE_INTERVAL", "8"))),
         )
 
     def ensure_dirs(self) -> None:

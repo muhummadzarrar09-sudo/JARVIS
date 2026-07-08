@@ -6,17 +6,21 @@
   <title>BRAVO-1 Web Shell Bootstrap</title>
   <style>
     body{margin:0;background:#0e1116;color:#edf2f7;font-family:Inter,Segoe UI,Arial,sans-serif}
-    .app{max-width:980px;margin:0 auto;padding:20px;display:grid;gap:16px}
+    .app{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:16px}
     .card{background:#151a22;border:1px solid #283241;border-radius:18px;padding:16px}
     .title{font-weight:800;letter-spacing:.05em;text-transform:uppercase;font-size:12px;color:#a7b6c8}
     .hero{font-size:28px;font-weight:800}
     .muted{color:#9aacbe;font-size:14px;line-height:1.6}
-    .feed{display:grid;gap:10px;max-height:50vh;overflow:auto}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    .feed{display:grid;gap:10px;max-height:45vh;overflow:auto}
     .entry{background:#121821;border:1px solid #263242;border-radius:14px;padding:12px;white-space:pre-wrap;line-height:1.5}
     textarea{width:100%;min-height:110px;background:#0d1218;color:#edf2f7;border:1px solid #314055;border-radius:14px;padding:12px;font:inherit}
     button{background:#223047;border:1px solid #3a4d69;color:#edf2f7;border-radius:12px;padding:10px 14px;cursor:pointer}
     .row{display:flex;gap:10px;flex-wrap:wrap}
     .status{font-size:13px;color:#9aacbe}
+    .small{font-size:13px;line-height:1.5;white-space:pre-wrap;color:#d8e3ef}
+    @media (max-width:1000px){.grid{grid-template-columns:1fr 1fr}}
+    @media (max-width:700px){.grid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -26,10 +30,19 @@
       <div class="hero">Web shell bootstrap</div>
       <div class="muted">Thin local shell for quick iteration. Chat-first. Minimal. Runtime-aware.</div>
     </div>
+
+    <div class="grid">
+      <div class="card"><div class="title">Health</div><div id="health" class="small">Loading...</div></div>
+      <div class="card"><div class="title">Session</div><div id="session" class="small">Loading...</div></div>
+      <div class="card"><div class="title">Runtime</div><div id="runtime" class="small">Loading...</div></div>
+      <div class="card"><div class="title">Browser</div><div id="browser" class="small">Loading...</div></div>
+    </div>
+
     <div class="card">
       <div class="title">Feed</div>
       <div id="feed" class="feed"></div>
     </div>
+
     <div class="card">
       <div class="title">Composer</div>
       <textarea id="prompt" placeholder="Ask BRAVO-1 something or use /help"></textarea>
@@ -37,6 +50,8 @@
         <button onclick="sendPrompt()">Send</button>
         <button onclick="preset('/brief')">Brief</button>
         <button onclick="preset('/runtime')">Runtime</button>
+        <button onclick="preset('/browser-status')">Browser</button>
+        <button onclick="preset('/windows-status')">Windows</button>
         <button onclick="preset('/web-health')">Web health</button>
         <span id="status" class="status">Ready.</span>
       </div>
@@ -46,9 +61,30 @@
     const feed = document.getElementById('feed');
     const prompt = document.getElementById('prompt');
     const statusEl = document.getElementById('status');
+    const healthEl = document.getElementById('health');
+    const sessionEl = document.getElementById('session');
+    const runtimeEl = document.getElementById('runtime');
+    const browserEl = document.getElementById('browser');
     function add(role, text){const el=document.createElement('div');el.className='entry';el.textContent=`${role}\n\n${text}`;feed.appendChild(el);feed.scrollTop=feed.scrollHeight;}
     function setStatus(text){statusEl.textContent=text;}
     function preset(text){prompt.value=text;sendPrompt();}
+    async function getJson(url){const res=await fetch(url);return await res.json();}
+    async function refreshPanels(){
+      try{
+        const [health, state]=await Promise.all([getJson('/api/health'), getJson('/api/state')]);
+        healthEl.textContent = `status: ${health.status || 'unknown'}\napp: ${health.app || 'BRAVO-1'}`;
+        const s = state.session || {};
+        const runtime = state.runtime || {};
+        const fast = runtime.fast || {};
+        const main = runtime.main || {};
+        const browser = state.browser || {};
+        sessionEl.textContent = `goal: ${s.current_goal || 'not set'}\nproject: ${s.current_project || 'not set'}\naction: ${s.last_primary_action || 'not set'}`;
+        runtimeEl.textContent = `fast: ${fast.model || 'n/a'}\nfast health: ${(fast.health||{}).ok ? 'up' : 'down'}\nmain: ${main.model || 'n/a'}\nmain health: ${(main.health||{}).ok ? 'up' : 'down'}`;
+        browserEl.textContent = `url: ${browser.last_url || 'not set'}\nmode: ${browser.mode || 'external'}\nlaunches: ${browser.launch_count || 0}\nfetches: ${browser.fetch_count || 0}`;
+      }catch(err){
+        healthEl.textContent = `error: ${String(err)}`;
+      }
+    }
     async function sendPrompt(){
       const message=prompt.value.trim();
       if(!message){setStatus('Type something first.');return;}
@@ -58,10 +94,13 @@
         const data=await res.json();
         add('bravo1',data.reply||JSON.stringify(data,null,2));
         setStatus(data.primary_action?`Primary action: ${data.primary_action}`:'Done.');
+        await refreshPanels();
       }catch(err){add('error',String(err));setStatus('Request failed.');}
     }
     prompt.addEventListener('keydown', async (event)=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();await sendPrompt();}});
     add('system','BRAVO-1 web shell bootstrap ready. Use /help for commands.');
+    refreshPanels();
+    setInterval(refreshPanels, 10000);
   </script>
 </body>
 </html>

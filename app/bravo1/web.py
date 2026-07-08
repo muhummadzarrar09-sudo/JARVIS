@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from bravo1.config import Settings
+from bravo1.app import build_operator
 from bravo1.core.operator import Operator
 
 
@@ -35,10 +35,14 @@ class _WebHandler(BaseHTTPRequestHandler):
             self._send_html(self.shell_html)
             return
         if self.path == "/api/health":
-            self._send_json({"ok": True, "app": "BRAVO-1 web shell bootstrap", "status": "ok"})
+            self._send_json({"ok": True, "app": "BRAVO-1 web shell", "status": "ok"})
             return
         if self.path == "/api/runtime":
             self._send_json(self.operator.runtime.status())
+            return
+        if self.path == "/api/session":
+            state = self.operator.sessions.load()
+            self._send_json({"ok": True, "session": self.operator.sessions.snapshot(state)})
             return
         self._send_json({"ok": False, "error": "Not found"}, status=HTTPStatus.NOT_FOUND)
 
@@ -68,8 +72,7 @@ def _shell_html_path() -> Path:
 
 
 def serve_web_shell(host: str = "127.0.0.1", port: int = 8011) -> None:
-    settings = Settings.load()
-    operator = Operator(settings)
+    operator = build_operator()
     shell_path = _shell_html_path()
     shell_html = shell_path.read_text(encoding="utf-8") if shell_path.exists() else "<h1>BRAVO-1 shell missing</h1>"
 

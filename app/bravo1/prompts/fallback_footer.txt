@@ -1,0 +1,4 @@
+Fast commands:
+/help, /brief, /session, /active, /tools, /runtime, /summarize
+/setgoal <text>, /project <text>, /tool <name>, /run <command>
+/capture <kind> <text>, /web-health

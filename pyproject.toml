@@ -19,9 +19,13 @@ dev = []
 [project.scripts]
 bravo1 = "bravo1.cli:main"
 bravo1-web = "bravo1.web_main:main"
+bravo1-api = "bravo1.api_main:main"
 
 [tool.setuptools]
 package-dir = {"" = "app"}
 
 [tool.setuptools.packages.find]
 where = ["app"]
+
+[tool.setuptools.package-data]
+"bravo1" = ["prompts/*.txt"]

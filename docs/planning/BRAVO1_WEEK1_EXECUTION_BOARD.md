@@ -25,22 +25,26 @@ By end of Week 1 we should have:
 
 ## Workstream B — Brain continuity
 ### Must finish
-- [ ] `data/brain/active.md` bootstrap
-- [ ] session summary path design
-- [ ] project continuity placeholder hooks
+- [x] `data/brain/active.md` bootstrap
+- [x] session summary path design
+- [x] project continuity placeholder hooks
+- [x] project capture path for notes / ideas / blockers
 
 ## Workstream C — Runtime
 ### Must finish
-- [ ] runtime README with model policy
-- [ ] PowerShell startup profile for llama-server
-- [ ] env example for local paths
-- [ ] first routing config notes
+- [x] runtime README with model policy
+- [x] PowerShell startup profile for llama-server
+- [x] env example for local paths
+- [x] first routing config notes
+- [x] runtime reachability checks
+- [x] runtime start/stop helper path
 
 ## Workstream D — Validation
 ### Must finish
-- [ ] package import test
-- [ ] CLI smoke test
-- [ ] syntax compile pass
+- [x] package import test
+- [x] CLI smoke test
+- [x] syntax compile pass
+- [x] operator command smoke test
 
 ---
 

@@ -18,6 +18,7 @@ dev = []
 
 [project.scripts]
 bravo1 = "bravo1.cli:main"
+bravo1-web = "bravo1.web_main:main"
 
 [tool.setuptools]
 package-dir = {"" = "app"}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BRAVO-1 Web Shell Bootstrap</title>
+  <style>
+    body{margin:0;background:#0e1116;color:#edf2f7;font-family:Inter,Segoe UI,Arial,sans-serif}
+    .app{max-width:980px;margin:0 auto;padding:20px;display:grid;gap:16px}
+    .card{background:#151a22;border:1px solid #283241;border-radius:18px;padding:16px}
+    .title{font-weight:800;letter-spacing:.05em;text-transform:uppercase;font-size:12px;color:#a7b6c8}
+    .hero{font-size:28px;font-weight:800}
+    .muted{color:#9aacbe;font-size:14px;line-height:1.6}
+    .feed{display:grid;gap:10px;max-height:50vh;overflow:auto}
+    .entry{background:#121821;border:1px solid #263242;border-radius:14px;padding:12px;white-space:pre-wrap;line-height:1.5}
+    textarea{width:100%;min-height:110px;background:#0d1218;color:#edf2f7;border:1px solid #314055;border-radius:14px;padding:12px;font:inherit}
+    button{background:#223047;border:1px solid #3a4d69;color:#edf2f7;border-radius:12px;padding:10px 14px;cursor:pointer}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .status{font-size:13px;color:#9aacbe}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <div class="title">BRAVO-1</div>
+      <div class="hero">Web shell bootstrap</div>
+      <div class="muted">Thin local shell for quick iteration. Chat-first. Minimal. Runtime-aware.</div>
+    </div>
+    <div class="card">
+      <div class="title">Feed</div>
+      <div id="feed" class="feed"></div>
+    </div>
+    <div class="card">
+      <div class="title">Composer</div>
+      <textarea id="prompt" placeholder="Ask BRAVO-1 something or use /help"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button onclick="sendPrompt()">Send</button>
+        <button onclick="preset('/brief')">Brief</button>
+        <button onclick="preset('/runtime')">Runtime</button>
+        <button onclick="preset('/web-health')">Web health</button>
+        <span id="status" class="status">Ready.</span>
+      </div>
+    </div>
+  </div>
+  <script>
+    const feed = document.getElementById('feed');
+    const prompt = document.getElementById('prompt');
+    const statusEl = document.getElementById('status');
+    function add(role, text){const el=document.createElement('div');el.className='entry';el.textContent=`${role}\n\n${text}`;feed.appendChild(el);feed.scrollTop=feed.scrollHeight;}
+    function setStatus(text){statusEl.textContent=text;}
+    function preset(text){prompt.value=text;sendPrompt();}
+    async function sendPrompt(){
+      const message=prompt.value.trim();
+      if(!message){setStatus('Type something first.');return;}
+      add('you',message);prompt.value='';setStatus('Thinking...');
+      try{
+        const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});
+        const data=await res.json();
+        add('bravo1',data.reply||JSON.stringify(data,null,2));
+        setStatus(data.primary_action?`Primary action: ${data.primary_action}`:'Done.');
+      }catch(err){add('error',String(err));setStatus('Request failed.');}
+    }
+    prompt.addEventListener('keydown', async (event)=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();await sendPrompt();}});
+    add('system','BRAVO-1 web shell bootstrap ready. Use /help for commands.');
+  </script>
+</body>
+</html>

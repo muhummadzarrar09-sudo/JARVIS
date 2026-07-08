@@ -5,7 +5,10 @@ from bravo1.config import Settings
 from bravo1.core.operator import Operator
 
 
-def build_terminal_channel() -> TerminalChannel:
+def build_operator() -> Operator:
     settings = Settings.load()
-    operator = Operator(settings)
-    return TerminalChannel(operator)
+    return Operator(settings)
+
+
+def build_terminal_channel() -> TerminalChannel:
+    return TerminalChannel(build_operator())

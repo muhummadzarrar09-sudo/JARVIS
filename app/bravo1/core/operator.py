@@ -7,6 +7,7 @@ from typing import Any
 from bravo1.brain.obsidian import ObsidianBrain
 from bravo1.config import Settings
 from bravo1.core.project import ProjectContinuity
+from bravo1.core.response import OperatorResponse
 from bravo1.core.session import SessionManager, SessionState
 from bravo1.core.summary import SessionSummaryWriter
 from bravo1.models.client import ModelClient
@@ -35,9 +36,9 @@ class Operator:
         self.brain.bootstrap()
 
         if message.strip().startswith("/"):
-            result = self._handle_slash_command(state, message.strip())
-            self.sessions.append_message(state, "assistant", result["reply"])
-            return result
+            response = self._handle_slash_command(state, message.strip())
+            self.sessions.append_message(state, "assistant", response.reply)
+            return response.to_dict()
 
         self.sessions.append_message(state, "user", message)
         route = self.router.route(self._task_type_for(message))
@@ -46,17 +47,24 @@ class Operator:
         self.project.sync_from_session(state)
         self.brain.sync_from_session(state, primary_action)
         active_context = self.brain.read_active()
-        reply = self._generate_operator_reply(state, route, primary_action, active_context, message)
+        reply, model_meta = self._generate_operator_reply(state, route, primary_action, active_context, message)
 
         self.sessions.append_message(state, "assistant", reply)
         self.sessions.save(state)
-        return {
-            "ok": True,
-            "session_id": state.session_id,
-            "primary_action": primary_action,
-            "route": asdict(route),
-            "reply": reply,
-        }
+        response = OperatorResponse(
+            ok=True,
+            session_id=state.session_id,
+            kind="chat",
+            primary_action=primary_action,
+            route=asdict(route),
+            reply=reply,
+            data={
+                "model": model_meta,
+                "project": self.project.inspect(),
+                "session": self.sessions.snapshot(state),
+            },
+        )
+        return response.to_dict()
 
     def _task_type_for(self, message: str) -> str:
         lowered = message.lower()
@@ -85,7 +93,7 @@ class Operator:
         primary_action: str,
         active_context: str,
         user_message: str,
-    ) -> str:
+    ) -> tuple[str, dict[str, Any]]:
         system_prompt = (
             "You are BRAVO-1, a calm local-first executive operator shell. "
             "Respond briefly, clearly, and in an operator tone. Use the provided active context."
@@ -106,9 +114,9 @@ class Operator:
                 "",
                 result["content"],
             ]
-            return "\n".join(lines)
+            return "\n".join(lines), result
 
-        return self._build_fallback_reply(state, route, primary_action, active_context, result.get("error"))
+        return self._build_fallback_reply(state, route, primary_action, active_context, result.get("error")), result
 
     def _build_fallback_reply(
         self,
@@ -134,6 +142,7 @@ class Operator:
                 "Fast commands:",
                 "/help, /brief, /session, /active, /tools, /runtime, /summarize",
                 "/setgoal <text>, /project <text>, /tool <name>, /run <command>",
+                "/capture <kind> <text>, /web-health",
                 "",
                 "Active context preview:",
                 active_context[:500],
@@ -141,29 +150,41 @@ class Operator:
         )
         return "\n".join(lines)
 
-    def _handle_slash_command(self, state: SessionState, raw: str) -> dict[str, Any]:
+    def _handle_slash_command(self, state: SessionState, raw: str) -> OperatorResponse:
         parts = raw.split(maxsplit=1)
         command = parts[0].lower()
         argument = parts[1].strip() if len(parts) > 1 else ""
+        kind = "command"
+        payload: dict[str, Any] = {}
 
         if command == "/help":
             reply = self._help_text()
         elif command == "/brief":
             reply = self._brief_text(state)
+            kind = "brief"
         elif command == "/session":
             snapshot = self.sessions.snapshot(state)
-            reply = "Session snapshot:\n" + json.dumps(snapshot, ensure_ascii=False, indent=2)
+            payload = {"session": snapshot}
+            reply = self._format_session_snapshot(snapshot)
+            kind = "session"
         elif command == "/active":
-            reply = self.brain.read_active()
+            context = self.brain.read_active()
+            payload = {"active_context": context}
+            reply = f"Active brain context\n\n{context}"
+            kind = "brain"
         elif command == "/tools":
-            items = [f"- {tool.name} ({tool.risk}) — {tool.description}" for tool in self.tools.list_tools()]
-            reply = "Available tools:\n" + "\n".join(items)
+            tools = [asdict(tool) for tool in self.tools.list_tools()]
+            payload = {"tools": tools}
+            reply = self._format_tools_list(tools)
+            kind = "tools"
         elif command == "/tool":
             if not argument:
                 reply = "Usage: /tool <tool_name>"
             else:
                 result = self.tools.execute(argument, state=state)
-                reply = json.dumps(result, ensure_ascii=False, indent=2)
+                payload = {"tool_result": result}
+                reply = self._format_tool_result(argument, result)
+                kind = "tool"
         elif command == "/run":
             if not argument:
                 reply = "Usage: /run <shell command>"
@@ -172,9 +193,19 @@ class Operator:
                 if candidate_cwd and not self._looks_like_real_dir(candidate_cwd):
                     candidate_cwd = None
                 result = self.shell.run(argument, cwd=candidate_cwd)
-                reply = json.dumps(result, ensure_ascii=False, indent=2)
+                payload = {"shell": result}
+                reply = self._format_shell_result(result)
+                kind = "shell"
         elif command == "/runtime":
-            reply = json.dumps(self.runtime.status(), ensure_ascii=False, indent=2)
+            runtime_status = self.runtime.status()
+            payload = {"runtime": runtime_status}
+            reply = self._format_runtime_status(runtime_status)
+            kind = "runtime"
+        elif command == "/web-health":
+            runtime_status = self.runtime.status()
+            payload = {"runtime": runtime_status}
+            reply = self._format_runtime_health(runtime_status)
+            kind = "runtime"
         elif command == "/setgoal":
             if not argument:
                 reply = "Usage: /setgoal <goal text>"
@@ -183,30 +214,60 @@ class Operator:
                 state.last_primary_action = argument
                 self.project.sync_from_session(state)
                 self.brain.sync_from_session(state, argument)
+                payload = {"goal": argument}
                 reply = f"Goal set: {argument}"
         elif command == "/project":
             if not argument:
                 continuity = self.project.inspect()
-                reply = json.dumps(continuity, ensure_ascii=False, indent=2)
+                payload = {"project": continuity}
+                reply = self._format_project_inspect(continuity)
+                kind = "project"
             else:
                 self.sessions.set_project(state, argument)
                 self.project.sync_from_session(state)
                 self.brain.sync_from_session(state, state.last_primary_action or "stabilize project continuity structure")
+                payload = {"project": argument}
                 reply = f"Project set: {argument}"
+                kind = "project"
         elif command == "/summarize":
             path = self.summaries.write(state, trigger="slash_command")
             state.last_summary_path = str(path)
             self.sessions.save(state)
             self.project.sync_from_session(state)
+            payload = {"summary_path": str(path)}
             reply = f"Session summary written: {path}"
+            kind = "summary"
+        elif command in {"/note", "/idea", "/blocker", "/followup"}:
+            if not argument:
+                reply = f"Usage: {command} <text>"
+            else:
+                capture_kind = command.lstrip("/")
+                result = self.project.capture(state, capture_kind, argument)
+                payload = {"capture": result}
+                reply = self._format_capture_result(result)
+                kind = "capture"
+        elif command == "/capture":
+            capture_parts = argument.split(maxsplit=1)
+            if len(capture_parts) < 2:
+                reply = "Usage: /capture <kind> <text>"
+            else:
+                capture_kind, capture_text = capture_parts[0], capture_parts[1]
+                result = self.project.capture(state, capture_kind, capture_text)
+                payload = {"capture": result}
+                reply = self._format_capture_result(result)
+                kind = "capture"
         else:
             reply = f"Unknown command: {command}. Try /help"
 
-        return {
-            "ok": True,
-            "session_id": state.session_id,
-            "reply": reply,
-        }
+        return OperatorResponse(
+            ok=True,
+            session_id=state.session_id,
+            kind=kind,
+            primary_action=state.last_primary_action,
+            route={},
+            reply=reply,
+            data=payload,
+        )
 
     def _help_text(self) -> str:
         return "\n".join(
@@ -221,9 +282,15 @@ class Operator:
                 "/tool <name> — execute a Week-1 tool",
                 "/run <command> — execute a local shell command",
                 "/runtime — inspect local GGUF runtime bootstrap status",
+                "/web-health — quick runtime reachability check",
                 "/setgoal <text> — set the current goal",
                 "/project <text> — set or inspect current project continuity",
                 "/summarize — write a session summary markdown file",
+                "/note <text> — capture a project note",
+                "/idea <text> — capture a project idea",
+                "/blocker <text> — capture a project blocker",
+                "/followup <text> — capture a project follow-up",
+                "/capture <kind> <text> — generic project capture",
             ]
         )
 
@@ -239,10 +306,120 @@ class Operator:
             f"Project: {continuity.get('current_project') or state.current_project or 'not set'}",
             f"Goal: {continuity.get('current_goal') or state.current_goal or 'not set'}",
             f"Route: {route.lane} -> {route.model_name}",
-            "",
-            "Active context:",
-            active[:500],
         ]
+        captures = continuity.get("recent_captures") or []
+        if captures:
+            lines.extend(["", "Recent captures:"])
+            for item in captures[:3]:
+                lines.append(f"- {item.get('kind')}: {item.get('text')}")
+        lines.extend(["", "Active context:", active[:500]])
+        return "\n".join(lines)
+
+    def _format_session_snapshot(self, snapshot: dict[str, Any]) -> str:
+        return "\n".join(
+            [
+                "Session snapshot",
+                f"- session_id: {snapshot.get('session_id')}",
+                f"- current_goal: {snapshot.get('current_goal') or 'not set'}",
+                f"- current_project: {snapshot.get('current_project') or 'not set'}",
+                f"- last_primary_action: {snapshot.get('last_primary_action') or 'not set'}",
+                f"- last_summary_path: {snapshot.get('last_summary_path') or 'not set'}",
+                f"- recent_messages: {len(snapshot.get('recent_messages') or [])}",
+            ]
+        )
+
+    def _format_tools_list(self, tools: list[dict[str, Any]]) -> str:
+        lines = ["Available tools", ""]
+        for tool in tools:
+            lines.append(f"- {tool.get('name')} ({tool.get('risk')}) — {tool.get('description')}")
+        return "\n".join(lines)
+
+    def _format_tool_result(self, tool_name: str, result: dict[str, Any]) -> str:
+        lines = [f"Tool result: {tool_name}"]
+        if result.get("plain_english"):
+            lines.append(result["plain_english"])
+        if result.get("error"):
+            lines.append(f"Error: {result['error']}")
+        if result.get("snapshot"):
+            lines.append(self._format_session_snapshot(result["snapshot"]))
+        if result.get("active_context"):
+            lines.append("\n" + result["active_context"][:600])
+        if result.get("current_project"):
+            lines.append(f"Project: {result.get('current_project')}")
+        if result.get("fast") and result.get("main"):
+            lines.append(f"Fast: {result.get('fast', {}).get('model')} @ {result.get('fast', {}).get('endpoint')}")
+            lines.append(f"Main: {result.get('main', {}).get('model')} @ {result.get('main', {}).get('endpoint')}")
+        return "\n".join(lines)
+
+    def _format_shell_result(self, result: dict[str, Any]) -> str:
+        lines = [f"Shell command: {result.get('command')}", f"Working directory: {result.get('cwd')}"]
+        if result.get("ok"):
+            lines.append(f"Return code: {result.get('returncode')}")
+            if result.get("stdout"):
+                lines.append("\nstdout:\n" + result["stdout"])
+            if result.get("stderr"):
+                lines.append("\nstderr:\n" + result["stderr"])
+        else:
+            lines.append(f"Error: {result.get('error') or result.get('stderr') or 'command failed'}")
+        return "\n".join(lines)
+
+    def _format_runtime_status(self, runtime_status: dict[str, Any]) -> str:
+        fast = runtime_status.get("fast", {})
+        main = runtime_status.get("main", {})
+        lines = [
+            "Runtime status",
+            f"Fast: {fast.get('model')} @ {fast.get('endpoint')}",
+            f"Main: {main.get('model')} @ {main.get('endpoint')}",
+            f"Fast profile exists: {fast.get('profile_exists')}",
+            f"Main profile exists: {main.get('profile_exists')}",
+        ]
+        return "\n".join(lines)
+
+    def _format_runtime_health(self, runtime_status: dict[str, Any]) -> str:
+        fast = runtime_status.get("fast", {})
+        main = runtime_status.get("main", {})
+        fast_health = fast.get("health", {})
+        main_health = main.get("health", {})
+        return "\n".join(
+            [
+                "Runtime reachability",
+                f"Fast lane: {'reachable' if fast_health.get('ok') else 'offline'}",
+                f"Main lane: {'reachable' if main_health.get('ok') else 'offline'}",
+                f"Fast endpoint: {fast.get('endpoint')}",
+                f"Main endpoint: {main.get('endpoint')}",
+            ]
+        )
+
+    def _format_project_inspect(self, continuity: dict[str, Any]) -> str:
+        lines = [
+            "Project continuity",
+            f"Project: {continuity.get('current_project') or 'not set'}",
+            f"Goal: {continuity.get('current_goal') or 'not set'}",
+            f"Last primary action: {continuity.get('last_primary_action') or 'not set'}",
+            f"Last summary: {continuity.get('last_summary_path') or 'not set'}",
+        ]
+        captures = continuity.get("recent_captures") or []
+        if captures:
+            lines.append("Recent captures:")
+            for item in captures[:5]:
+                lines.append(f"- {item.get('kind')}: {item.get('text')}")
+        return "\n".join(lines)
+
+    def _format_capture_result(self, result: dict[str, Any]) -> str:
+        if not result.get("ok"):
+            return result.get("error") or "Capture failed."
+        capture = result.get("capture", {})
+        lines = [
+            result.get("plain_english") or "Capture saved.",
+            f"Project: {capture.get('project')}",
+            f"Kind: {capture.get('kind')}",
+            f"Text: {capture.get('text')}",
+        ]
+        recent = result.get("recent_captures") or []
+        if recent:
+            lines.append("Recent captures:")
+            for item in recent[:3]:
+                lines.append(f"- {item.get('kind')}: {item.get('text')}")
         return "\n".join(lines)
 
     def _looks_like_real_dir(self, value: str) -> bool:

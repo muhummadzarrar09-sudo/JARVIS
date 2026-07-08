@@ -28,6 +28,8 @@ def test_operator_scaffold_runs(tmp_path):
     assert result["ok"] is True
     assert result["primary_action"]
     assert "Primary action" in result["reply"]
+    assert result["kind"] == "chat"
+    assert "data" in result
 
 
 def test_slash_commands_and_summary(tmp_path):
@@ -52,6 +54,12 @@ def test_slash_commands_and_summary(tmp_path):
 
     run_result = operator.handle("/run echo bravo1")
     assert "bravo1" in run_result["reply"].lower()
+
+    capture_result = operator.handle("/note remember the web shell bootstrap")
+    assert "remember the web shell bootstrap" in capture_result["reply"].lower()
+
+    health_result = operator.handle("/web-health")
+    assert "Runtime reachability" in health_result["reply"]
 
     summary_result = operator.handle("/summarize")
     assert "Session summary written" in summary_result["reply"]

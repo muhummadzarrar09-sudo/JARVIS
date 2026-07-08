@@ -4,11 +4,14 @@ Clean rebuild workspace for BRAVO-1.
 
 ## Quick start
 ### Arena / local shell
-- PowerShell: `./scripts/start-cli.ps1`
-- Bash: `./scripts/start-cli.sh`
+- PowerShell CLI: `./scripts/start-cli.ps1`
+- Bash CLI: `./scripts/start-cli.sh`
+- PowerShell web shell: `./scripts/start-web-shell.ps1`
+- Bash web shell: `./scripts/start-web-shell.sh`
 
 ### Direct Python
-- `PYTHONPATH=app python -m bravo1.cli`
+- CLI: `PYTHONPATH=app python -m bravo1.cli`
+- Web shell: `PYTHONPATH=app python -m bravo1.web_main`
 
 ## Core dirs
 - `app/` application code

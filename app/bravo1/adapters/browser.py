@@ -18,10 +18,13 @@ class BrowserAdapter:
     fetch_timeout_seconds: int = 8
     provider: str = "external-browser"
     state_path: Path = field(init=False)
+    artifact_dir: Path = field(init=False)
 
     def __post_init__(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.state_path = self.data_dir / "browser_state.json"
+        self.artifact_dir = self.data_dir / "artifacts"
+        self.artifact_dir.mkdir(parents=True, exist_ok=True)
 
     def _load_state(self) -> dict:
         if not self.state_path.exists():
@@ -35,6 +38,8 @@ class BrowserAdapter:
                 "last_title": None,
                 "last_controlled_url": None,
                 "last_controlled_attempt_at": None,
+                "last_controlled_title": None,
+                "last_controlled_screenshot": None,
             }
         return json.loads(self.state_path.read_text(encoding="utf-8"))
 
@@ -88,7 +93,7 @@ class BrowserAdapter:
         except OSError as exc:
             return {"ok": False, "provider": self.provider, "url": clean, "error": str(exc)}
 
-    def open_url_controlled(self, url: str) -> dict:
+    def open_url_controlled(self, url: str, max_chars: int = 2500) -> dict:
         clean = self._normalize_url(url)
         if not clean:
             return {"ok": False, "error": "URL is required."}
@@ -107,15 +112,53 @@ class BrowserAdapter:
                 "error": "Playwright is not installed yet, so controlled browser mode is not available.",
                 "next_action": "Install Playwright when we begin the controlled browser pass.",
             }
-        return {
-            "ok": False,
-            "provider": "playwright-controlled",
-            "mode": "controlled",
-            "url": clean,
-            "state": state,
-            "error": "Controlled browser mode foundation is in place, but real DOM action execution is not wired yet.",
-            "next_action": "Wire Playwright session + DOM extraction in the next browser build pass.",
-        }
+
+        try:
+            from playwright.sync_api import sync_playwright  # type: ignore
+
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
+                page.goto(clean, wait_until="domcontentloaded", timeout=self.fetch_timeout_seconds * 1000)
+                title = page.title()
+                text = page.locator("body").inner_text()[:max_chars]
+                screenshot_path = self.artifact_dir / f"controlled-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.png"
+                try:
+                    page.screenshot(path=str(screenshot_path), full_page=True)
+                    screenshot_value = str(screenshot_path)
+                except Exception:
+                    screenshot_value = None
+                browser.close()
+
+            state = self._load_state()
+            state["last_controlled_url"] = clean
+            state["last_controlled_title"] = title
+            state["last_controlled_attempt_at"] = datetime.now(UTC).isoformat()
+            state["last_controlled_screenshot"] = screenshot_value
+            state["mode"] = "controlled"
+            self._save_state(state)
+            return {
+                "ok": True,
+                "provider": "playwright-controlled",
+                "mode": "controlled",
+                "url": clean,
+                "title": title,
+                "text": text,
+                "screenshot": screenshot_value,
+                "state": state,
+                "plain_english": "Controlled browser mode fetched a page snapshot using Playwright.",
+                "next_action": "Use /browser-status to inspect remembered controlled-browser state.",
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "provider": "playwright-controlled",
+                "mode": "controlled",
+                "url": clean,
+                "state": state,
+                "error": str(exc),
+                "next_action": "Make sure Playwright and Chromium are installed, then retry controlled browser mode.",
+            }
 
     def fetch_page(self, url: str | None = None, max_chars: int = 2500) -> dict:
         target = self._normalize_url(url) or self._load_state().get("last_url")
@@ -156,12 +199,14 @@ class BrowserAdapter:
             "last_opened_at": state.get("last_opened_at"),
             "last_fetched_at": state.get("last_fetched_at"),
             "last_controlled_url": state.get("last_controlled_url"),
+            "last_controlled_title": state.get("last_controlled_title"),
             "last_controlled_attempt_at": state.get("last_controlled_attempt_at"),
+            "last_controlled_screenshot": state.get("last_controlled_screenshot"),
             "launch_count": state.get("launch_count", 0),
             "fetch_count": state.get("fetch_count", 0),
             "playwright_available": self._playwright_available(),
             "plain_english": "This is the current BRAVO-1 remembered browser state.",
-            "next_action": "Use /browser <url> to open a page, /browser-fetch to inspect it, or /browser-controlled to prepare the controlled lane.",
+            "next_action": "Use /browser <url> to open a page, /browser-fetch to inspect it, or /browser-controlled to use the controlled lane.",
         }
 
     def inspect(self) -> dict:

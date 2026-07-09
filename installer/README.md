@@ -15,3 +15,6 @@ Packaging is not implemented yet.
 ## Support scripts
 - `scripts/build_installer_manifest.py`
 - `scripts/check-installer-prereqs.py`
+
+## Installer stub
+- `installer/BRAVO1.iss`

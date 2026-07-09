@@ -19,6 +19,7 @@ def build_settings(tmp_path):
         runtime_host="127.0.0.1",
         runtime_fast_port=8080,
         runtime_main_port=8081,
+        runtime_profile="auto",
         shell_timeout_seconds=20,
         model_request_timeout_seconds=1,
         browser_fetch_timeout_seconds=2,
@@ -82,6 +83,9 @@ def test_slash_commands_and_summary(tmp_path):
 
     windows_status = operator.handle("/windows-status")
     assert "Windows adapter status" in windows_status["reply"]
+
+    windows_active = operator.handle("/windows-active")
+    assert "Windows active window" in windows_active["reply"] or "Windows active-window check failed" in windows_active["reply"] or "no active titled window" in windows_active["reply"]
 
     windows_find = operator.handle("/windows-find code")
     assert "Window search" in windows_find["reply"] or "Window search failed" in windows_find["reply"]

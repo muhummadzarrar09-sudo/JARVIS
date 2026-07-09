@@ -28,6 +28,10 @@ Purpose:
 
 Current status:
 - live bootstrap
+- health/session/runtime/browser panels
+- quick browser/runtime action controls
+- browser URL input + action buttons
+- runtime start/stop controls
 
 ### Layer 3 — Full calm BRAVO-1 shell
 Target feel:
@@ -65,6 +69,7 @@ Status:
 
 ## Immediate next UI goals
 1. strengthen the thin web shell state model
-2. add better structured session/project/runtime cards
-3. keep command surfaces simple while capability layers deepen
-4. only then move toward the full calm operator shell
+2. add better structured session/project/runtime/browser cards
+3. add quick action controls without turning the shell into a dashboard wall
+4. keep command surfaces simple while capability layers deepen
+5. only then move toward the full calm operator shell

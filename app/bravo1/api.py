@@ -72,27 +72,41 @@ class _APIHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(self.operator.handle(message))
             return
+
+        try:
+            payload = self._read_json()
+        except json.JSONDecodeError:
+            payload = {}
+
         if self.path == "/browser/open":
-            try:
-                payload = self._read_json()
-            except json.JSONDecodeError:
-                payload = {}
             url = str(payload.get("url") or "").strip()
             self._send_json(self.operator.handle(f"/browser {url}" if url else "/browser"))
             return
+        if self.path == "/browser/open-controlled":
+            url = str(payload.get("url") or "").strip()
+            self._send_json(self.operator.handle(f"/browser-controlled {url}" if url else "/browser-status"))
+            return
+        if self.path == "/browser/fetch":
+            url = str(payload.get("url") or "").strip()
+            self._send_json(self.operator.handle(f"/browser-fetch {url}" if url else "/browser-fetch"))
+            return
+        if self.path == "/windows/find":
+            query = str(payload.get("query") or "").strip()
+            self._send_json(self.operator.handle(f"/windows-find {query}" if query else "/windows-status"))
+            return
+        if self.path == "/windows/focus":
+            title = str(payload.get("title") or "").strip()
+            self._send_json(self.operator.handle(f"/windows-focus {title}" if title else "/windows-status"))
+            return
+        if self.path == "/shell/run":
+            command = str(payload.get("command") or "").strip()
+            self._send_json(self.operator.handle(f"/run {command}" if command else "/help"))
+            return
         if self.path == "/runtime/start":
-            try:
-                payload = self._read_json()
-            except json.JSONDecodeError:
-                payload = {}
             lane = str(payload.get("lane") or "fast")
             self._send_json(self.operator.runtime.launch(lane))
             return
         if self.path == "/runtime/stop":
-            try:
-                payload = self._read_json()
-            except json.JSONDecodeError:
-                payload = {}
             lane = str(payload.get("lane") or "fast")
             self._send_json(self.operator.runtime.stop(lane))
             return

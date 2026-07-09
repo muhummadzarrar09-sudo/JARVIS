@@ -16,3 +16,11 @@ Local runtime layer for BRAVO-1.
 - `profiles/templates/llama-server-low.txt`
 - `profiles/templates/llama-server-medium.txt`
 - `profiles/templates/llama-server-heavy.txt`
+
+## Generated profile variants
+- `llama-server-fast-low.*`
+- `llama-server-fast-medium.*`
+- `llama-server-fast-heavy.*`
+- `llama-server-main-low.*`
+- `llama-server-main-medium.*`
+- `llama-server-main-heavy.*`

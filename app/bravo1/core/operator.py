@@ -300,6 +300,11 @@ class Operator:
             payload = {"windows": windows_status}
             reply = self._format_windows_status(windows_status)
             kind = "windows"
+        elif command == "/windows-active":
+            result = self.windows.active_window()
+            payload = {"windows": result}
+            reply = self._format_windows_active(result)
+            kind = "windows"
         elif command == "/windows-find":
             result = self.windows.find_windows(argument)
             payload = {"windows": result}
@@ -368,6 +373,7 @@ class Operator:
                 "/browser-fetch [url] — fetch a lightweight text snapshot of the remembered page",
                 "/browser-status — inspect remembered browser state",
                 "/windows-status — inspect Windows adapter status",
+                "/windows-active — inspect the current active window bootstrap snapshot",
                 "/windows-find <text> — search titled windows by text",
                 "/windows-focus <title> — attempt to focus a window title",
                 "/setgoal <text> — set the current goal",
@@ -561,11 +567,26 @@ class Operator:
             f"pyautogui_installed: {status.get('pyautogui_installed')}",
             f"window_count: {status.get('window_count', 0)}",
         ]
+        active = status.get('active_window')
+        if isinstance(active, dict):
+            lines.append(f"active_window: {active.get('MainWindowTitle') or active.get('ProcessName') or 'unknown'}")
         planned = status.get('planned_capabilities') or []
         if planned:
             lines.append("Planned:")
             lines.extend(f"- {item}" for item in planned[:4])
         return "\n".join(lines)
+
+    def _format_windows_active(self, result: dict[str, Any]) -> str:
+        if not result.get('ok'):
+            return f"Windows active-window check failed: {result.get('error') or 'unknown error'}"
+        window = result.get('window')
+        if not window:
+            return "Windows active-window snapshot: no active titled window detected."
+        return "\n".join([
+            "Windows active window",
+            f"Process: {window.get('ProcessName')}",
+            f"Title: {window.get('MainWindowTitle')}",
+        ])
 
     def _format_windows_find(self, result: dict[str, Any]) -> str:
         if not result.get("ok"):

@@ -63,7 +63,7 @@ Purpose:
 
 Current shell modes:
 - terminal-first loop
-- thin local web shell bootstrap
+- thin local web shell bootstrap with state panels and quick action controls
 - later packaged desktop wrapper
 
 ### 2. Operator core
@@ -86,8 +86,8 @@ Current capabilities:
 - shell execution
 - local model routing/client
 - memory/brain integration
-- browser adapter bootstrap with remembered external-browser state, controlled-browser foundation, and lightweight text snapshot fetch
-- Windows adapter bootstrap with status, window enumeration, search, and focus-attempt path
+- browser adapter with remembered external-browser state, controlled-browser foundation, and lightweight text snapshot fetch
+- Windows adapter with status, window enumeration, active-window snapshot, search, and focus-attempt path
 
 Later capabilities:
 - browser DOM operator

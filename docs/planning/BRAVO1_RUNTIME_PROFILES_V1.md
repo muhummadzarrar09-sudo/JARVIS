@@ -57,14 +57,22 @@ Use for:
 
 ---
 
-## Next profile expansion
-When the stronger laptop arrives, add:
-- `llama-server-fast-medium.*`
-- `llama-server-main-medium.*`
-- `llama-server-main-heavy.*`
+## Current profile files
+The rebuild now includes generated profile variants for:
+- `fast-low`
+- `fast-medium`
+- `fast-heavy`
+- `main-low`
+- `main-medium`
+- `main-heavy`
 
-and let runtime status expose:
-- current selected profile
+and runtime status exposes:
+- selected profile
+- resolved profile path
+- lane health
+
+## Next profile expansion
+When the stronger laptop arrives, tune these profiles with real measured hardware data and expose:
 - ctx size
 - gpu layers
 - thread count

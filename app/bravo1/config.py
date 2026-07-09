@@ -17,6 +17,7 @@ class Settings:
     runtime_host: str
     runtime_fast_port: int
     runtime_main_port: int
+    runtime_profile: str
     shell_timeout_seconds: int
     model_request_timeout_seconds: int
     browser_fetch_timeout_seconds: int
@@ -39,6 +40,7 @@ class Settings:
             runtime_host=os.getenv("BRAVO1_RUNTIME_HOST", "127.0.0.1"),
             runtime_fast_port=int(os.getenv("BRAVO1_RUNTIME_FAST_PORT", "8080")),
             runtime_main_port=int(os.getenv("BRAVO1_RUNTIME_MAIN_PORT", "8081")),
+            runtime_profile=os.getenv("BRAVO1_RUNTIME_PROFILE", "auto").strip().lower() or "auto",
             shell_timeout_seconds=int(os.getenv("BRAVO1_SHELL_TIMEOUT_SECONDS", "20")),
             model_request_timeout_seconds=int(os.getenv("BRAVO1_MODEL_REQUEST_TIMEOUT_SECONDS", "8")),
             browser_fetch_timeout_seconds=int(os.getenv("BRAVO1_BROWSER_FETCH_TIMEOUT_SECONDS", "8")),

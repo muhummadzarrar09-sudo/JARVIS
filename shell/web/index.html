@@ -14,7 +14,8 @@
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
     .feed{display:grid;gap:10px;max-height:45vh;overflow:auto}
     .entry{background:#121821;border:1px solid #263242;border-radius:14px;padding:12px;white-space:pre-wrap;line-height:1.5}
-    textarea{width:100%;min-height:110px;background:#0d1218;color:#edf2f7;border:1px solid #314055;border-radius:14px;padding:12px;font:inherit}
+    textarea,input{width:100%;background:#0d1218;color:#edf2f7;border:1px solid #314055;border-radius:14px;padding:12px;font:inherit}
+    textarea{min-height:110px}
     button{background:#223047;border:1px solid #3a4d69;color:#edf2f7;border-radius:12px;padding:10px 14px;cursor:pointer}
     .row{display:flex;gap:10px;flex-wrap:wrap}
     .status{font-size:13px;color:#9aacbe}
@@ -39,6 +40,20 @@
     </div>
 
     <div class="card">
+      <div class="title">Quick actions</div>
+      <div class="row">
+        <input id="browserUrl" placeholder="https://example.com" />
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button onclick="browserOpen()">Open browser</button>
+        <button onclick="browserControlled()">Controlled browser</button>
+        <button onclick="browserFetch()">Fetch page</button>
+        <button onclick="runtimeStart('fast')">Start fast runtime</button>
+        <button onclick="runtimeStop('fast')">Stop fast runtime</button>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="title">Feed</div>
       <div id="feed" class="feed"></div>
     </div>
@@ -60,6 +75,7 @@
   <script>
     const feed = document.getElementById('feed');
     const prompt = document.getElementById('prompt');
+    const browserUrl = document.getElementById('browserUrl');
     const statusEl = document.getElementById('status');
     const healthEl = document.getElementById('health');
     const sessionEl = document.getElementById('session');
@@ -69,6 +85,7 @@
     function setStatus(text){statusEl.textContent=text;}
     function preset(text){prompt.value=text;sendPrompt();}
     async function getJson(url){const res=await fetch(url);return await res.json();}
+    async function postJson(url, payload){const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload||{})});return await res.json();}
     async function refreshPanels(){
       try{
         const [health, state]=await Promise.all([getJson('/api/health'), getJson('/api/state')]);
@@ -79,7 +96,7 @@
         const main = runtime.main || {};
         const browser = state.browser || {};
         sessionEl.textContent = `goal: ${s.current_goal || 'not set'}\nproject: ${s.current_project || 'not set'}\naction: ${s.last_primary_action || 'not set'}`;
-        runtimeEl.textContent = `fast: ${fast.model || 'n/a'}\nfast health: ${(fast.health||{}).ok ? 'up' : 'down'}\nmain: ${main.model || 'n/a'}\nmain health: ${(main.health||{}).ok ? 'up' : 'down'}`;
+        runtimeEl.textContent = `profile: ${runtime.selected_profile || 'low'}\nfast: ${fast.model || 'n/a'}\nfast health: ${(fast.health||{}).ok ? 'up' : 'down'}\nmain health: ${(main.health||{}).ok ? 'up' : 'down'}`;
         browserEl.textContent = `url: ${browser.last_url || 'not set'}\nmode: ${browser.mode || 'external'}\nlaunches: ${browser.launch_count || 0}\nfetches: ${browser.fetch_count || 0}`;
       }catch(err){
         healthEl.textContent = `error: ${String(err)}`;
@@ -90,12 +107,39 @@
       if(!message){setStatus('Type something first.');return;}
       add('you',message);prompt.value='';setStatus('Thinking...');
       try{
-        const res=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message})});
-        const data=await res.json();
-        add('bravo1',data.reply||JSON.stringify(data,null,2));
+        const data=await postJson('/api/chat',{message});
+        add('alpha1',data.reply||JSON.stringify(data,null,2));
         setStatus(data.primary_action?`Primary action: ${data.primary_action}`:'Done.');
         await refreshPanels();
       }catch(err){add('error',String(err));setStatus('Request failed.');}
+    }
+    async function browserOpen(){
+      const url=browserUrl.value.trim();
+      const data=await postJson('/api/browser/open',{url});
+      add('alpha1',data.reply||JSON.stringify(data,null,2));
+      await refreshPanels();
+    }
+    async function browserControlled(){
+      const url=browserUrl.value.trim();
+      const data=await postJson('/api/browser/open-controlled',{url});
+      add('alpha1',data.reply||JSON.stringify(data,null,2));
+      await refreshPanels();
+    }
+    async function browserFetch(){
+      const url=browserUrl.value.trim();
+      const data=await postJson('/api/browser/fetch',{url});
+      add('alpha1',data.reply||JSON.stringify(data,null,2));
+      await refreshPanels();
+    }
+    async function runtimeStart(lane){
+      const data=await postJson('/api/runtime/start',{lane});
+      add('alpha1',JSON.stringify(data,null,2));
+      await refreshPanels();
+    }
+    async function runtimeStop(lane){
+      const data=await postJson('/api/runtime/stop',{lane});
+      add('alpha1',JSON.stringify(data,null,2));
+      await refreshPanels();
     }
     prompt.addEventListener('keydown', async (event)=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();await sendPrompt();}});
     add('system','BRAVO-1 web shell bootstrap ready. Use /help for commands.');

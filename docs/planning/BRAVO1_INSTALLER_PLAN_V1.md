@@ -80,12 +80,14 @@ BRAVO-1/
 ---
 
 ## First installer milestone
-Not to build yet, but to prepare for:
+Current groundwork now includes:
 1. stable API entrypoint
 2. stable CLI entrypoint
 3. stable web shell entrypoint
 4. reproducible config bootstrap
 5. reproducible runtime validation script
 6. pinned dependency strategy
+7. installer prereq check scripts
+8. Inno Setup stub (`installer/BRAVO1.iss`)
 
-BRAVO-1 is not ready for the full installer pass yet, but v0.5+ should now intentionally keep that destination in view.
+BRAVO-1 is still not ready for the final installer build, but the bootstrap packaging path is now actively wired instead of only imagined.

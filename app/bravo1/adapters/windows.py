@@ -67,6 +67,17 @@ class WindowsAdapter:
             "plain_english": "This is the current titled-window list from the Windows adapter bootstrap.",
         }
 
+    def active_window(self) -> dict:
+        if os.name != "nt":
+            return {"ok": False, "error": "Active-window inspection currently targets Windows only."}
+        result = self._powershell("Get-Process | Where-Object {$_.MainWindowTitle -and $_.MainWindowHandle -ne 0} | Select-Object -First 1 Id,ProcessName,MainWindowTitle | ConvertTo-Json -Depth 2")
+        if not result.get("ok"):
+            return result
+        raw = result.get("stdout") or ""
+        if not raw:
+            return {"ok": True, "window": None}
+        return {"ok": True, "window": json.loads(raw), "plain_english": "This is the current active-window bootstrap snapshot."}
+
     def find_windows(self, text: str) -> dict:
         needle = (text or "").strip().lower()
         if not needle:
@@ -106,8 +117,10 @@ class WindowsAdapter:
     def inspect(self) -> dict:
         status = self.status()
         windows = self.list_windows() if status.get("is_windows") else {"ok": False, "items": []}
+        active = self.active_window() if status.get("is_windows") else {"ok": False, "window": None}
         status["window_count"] = windows.get("count", 0)
         status["sample_windows"] = windows.get("items", [])[:5]
+        status["active_window"] = active.get("window")
         status["planned_capabilities"] = [
             "enumerate active windows",
             "inspect UIA element tree",

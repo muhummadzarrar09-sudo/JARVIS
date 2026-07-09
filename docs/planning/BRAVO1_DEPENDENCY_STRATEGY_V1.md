@@ -39,8 +39,13 @@ The installer path gets much easier if BRAVO-1 keeps:
 - explicit optional dependency groups
 - clear runtime prerequisites
 
-## Next dependency milestone
-When we begin the first real browser + Windows integration pass, create:
+## Current onboarding assets
 - `requirements-runtime.txt`
 - `requirements-dev.txt`
-- dependency install notes in `docs/planning/`
+- `docs/planning/BRAVO1_DEPENDENCY_ONBOARDING_V1.md`
+- `scripts/bootstrap-dev.*`
+- `scripts/install-playwright.*`
+- `scripts/install-windows-tools.*`
+
+## Next dependency milestone
+When we begin the full controlled browser + Windows UIA integration pass, pin real runtime versions instead of placeholders and verify packaging implications.

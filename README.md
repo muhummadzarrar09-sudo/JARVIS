@@ -14,6 +14,12 @@ Clean rebuild workspace for BRAVO-1.
 - Bash validation: `./scripts/validate-runtime.sh`
 - PowerShell installer prereq check: `./scripts/check-installer-prereqs.ps1`
 - Bash installer prereq check: `./scripts/check-installer-prereqs.sh`
+- PowerShell dev bootstrap: `./scripts/bootstrap-dev.ps1`
+- Bash dev bootstrap: `./scripts/bootstrap-dev.sh`
+- PowerShell Playwright bootstrap: `./scripts/install-playwright.ps1`
+- Bash Playwright bootstrap: `./scripts/install-playwright.sh`
+- PowerShell Windows tools bootstrap: `./scripts/install-windows-tools.ps1`
+- Bash Windows tools bootstrap: `./scripts/install-windows-tools.sh`
 
 ### Direct Python
 - CLI: `PYTHONPATH=app python -m bravo1.cli`
@@ -38,3 +44,4 @@ Clean rebuild workspace for BRAVO-1.
 - `docs/` planning, imported research, archived legacy docs
 - `requirements-runtime.txt` runtime dependency pin file (evolves later)
 - `requirements-dev.txt` dev/test dependency pin file
+- `installer/BRAVO1.iss` Inno Setup stub for the future Windows installer path

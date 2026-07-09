@@ -30,9 +30,26 @@ class RuntimeBootstrap:
     def _pid_path(self, lane: str) -> Path:
         return self._runtime_state_dir() / f"{lane}.pid"
 
-    def _platform_profile_path(self, lane: str) -> Path:
-        suffix = ".ps1" if os.name == "nt" else ".sh"
-        return self._profile_path(f"llama-server-{lane}{suffix}")
+    def _platform_suffix(self) -> str:
+        return ".ps1" if os.name == "nt" else ".sh"
+
+    def _effective_profile(self) -> str:
+        chosen = self.settings.runtime_profile
+        if chosen in {"low", "medium", "heavy"}:
+            return chosen
+        return "low"
+
+    def _resolve_lane_profile(self, lane: str) -> Path:
+        suffix = self._platform_suffix()
+        profile = self._effective_profile()
+        candidates = [
+            self._profile_path(f"llama-server-{lane}-{profile}{suffix}"),
+            self._profile_path(f"llama-server-{lane}{suffix}"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[-1]
 
     def _ping_endpoint(self, base_url: str) -> dict:
         checks = [f"{base_url}/health", f"{base_url}/v1/models"]
@@ -59,6 +76,8 @@ class RuntimeBootstrap:
         profile_sh = self._profile_path(f"llama-server-{lane}.sh")
         pid_path = self._pid_path(lane)
         pid = pid_path.read_text(encoding="utf-8").strip() if pid_path.exists() else None
+        selected_profile = self._effective_profile()
+        resolved_profile = self._resolve_lane_profile(lane)
         return {
             "model": model,
             "port": port,
@@ -67,7 +86,9 @@ class RuntimeBootstrap:
             "profile_ps1_exists": profile_ps1.exists(),
             "profile_sh": str(profile_sh),
             "profile_sh_exists": profile_sh.exists(),
-            "active_profile": str(self._platform_profile_path(lane)),
+            "selected_profile": selected_profile,
+            "resolved_profile": str(resolved_profile),
+            "resolved_profile_exists": resolved_profile.exists(),
             "health": self._ping_endpoint(base),
             "pid": pid,
             "pid_file": str(pid_path),
@@ -77,6 +98,7 @@ class RuntimeBootstrap:
         return {
             "ok": True,
             "host": self.settings.runtime_host,
+            "selected_profile": self._effective_profile(),
             "fast": self._lane_status("fast", self.settings.fast_model, self.settings.runtime_fast_port),
             "main": self._lane_status("main", self.settings.main_model, self.settings.runtime_main_port),
             "plain_english": "This is the BRAVO-1 runtime bootstrap status for local GGUF serving.",
@@ -87,7 +109,7 @@ class RuntimeBootstrap:
         clean_lane = lane.strip().lower()
         if clean_lane not in {"fast", "main"}:
             return {"ok": False, "error": f"Unknown runtime lane: {lane}"}
-        profile = self._platform_profile_path(clean_lane)
+        profile = self._resolve_lane_profile(clean_lane)
         if not profile.exists():
             return {"ok": False, "error": f"Runtime profile not found: {profile}"}
         try:
@@ -101,6 +123,7 @@ class RuntimeBootstrap:
                 "lane": clean_lane,
                 "pid": proc.pid,
                 "profile": str(profile),
+                "selected_profile": self._effective_profile(),
                 "plain_english": f"Attempted to launch the {clean_lane} runtime lane.",
             }
         except OSError as exc:

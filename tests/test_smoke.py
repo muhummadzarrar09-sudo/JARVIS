@@ -71,6 +71,9 @@ def test_slash_commands_and_summary(tmp_path):
     browser_status = operator.handle("/browser-status")
     assert "Browser status" in browser_status["reply"]
 
+    controlled_browser = operator.handle("/browser-controlled https://example.com")
+    assert "Browser action failed" in controlled_browser["reply"] or "Opened browser URL" in controlled_browser["reply"]
+
     html_path = tmp_path / "browser-page.html"
     html_path.write_text("<html><head><title>Bravo Fetch</title></head><body><p>fetch works</p></body></html>", encoding="utf-8")
     browser_fetch = operator.handle(f"/browser-fetch {html_path.as_uri()}")
@@ -80,8 +83,15 @@ def test_slash_commands_and_summary(tmp_path):
     windows_status = operator.handle("/windows-status")
     assert "Windows adapter status" in windows_status["reply"]
 
+    windows_find = operator.handle("/windows-find code")
+    assert "Window search" in windows_find["reply"] or "Window search failed" in windows_find["reply"]
+
     health_result = operator.handle("/web-health")
     assert "Runtime reachability" in health_result["reply"]
+
+    state_snapshot = operator.state_snapshot()
+    assert state_snapshot["ok"] is True
+    assert (build_settings(tmp_path).data_dir / "app_state.json").exists()
 
     summary_result = operator.handle("/summarize")
     assert "Session summary written" in summary_result["reply"]
@@ -107,3 +117,7 @@ def test_browser_fetch_snapshot(tmp_path):
     assert result["ok"] is True
     assert result["title"] == "Bravo Page"
     assert "Hello World" in result["text"]
+
+    controlled = adapter.open_url_controlled("https://example.com")
+    assert controlled["ok"] is False
+    assert controlled["mode"] == "controlled"

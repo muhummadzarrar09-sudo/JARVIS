@@ -12,6 +12,7 @@ from bravo1.config import Settings
 from bravo1.core.project import ProjectContinuity
 from bravo1.core.response import OperatorResponse
 from bravo1.core.session import SessionManager, SessionState
+from bravo1.core.state_store import StateStore
 from bravo1.core.summary import SessionSummaryWriter
 from bravo1.models.client import ModelClient
 from bravo1.models.router import ModelRoute, ModelRouter
@@ -37,12 +38,13 @@ class Operator:
         self.prompts = PromptPack(prompt_dir)
         self.tools = ToolRegistry(self.sessions, self.brain, self.runtime, self.project, self.shell, self.browser, self.windows)
         self.summaries = SessionSummaryWriter(settings.summary_dir)
+        self.state_store = StateStore(settings.data_dir)
         self.model_client = ModelClient(timeout_seconds=settings.model_request_timeout_seconds)
 
     def state_snapshot(self) -> dict[str, Any]:
         state = self.sessions.load()
         self.brain.bootstrap()
-        return {
+        snapshot = {
             "ok": True,
             "session": self.sessions.snapshot(state),
             "project": self.project.inspect(),
@@ -50,6 +52,8 @@ class Operator:
             "browser": self.browser.status(),
             "windows": self.windows.status(),
         }
+        self.state_store.save(snapshot)
+        return snapshot
 
     def handle(self, message: str) -> dict[str, Any]:
         state = self.sessions.load()
@@ -58,6 +62,7 @@ class Operator:
         if message.strip().startswith("/"):
             response = self._handle_slash_command(state, message.strip())
             self.sessions.append_message(state, "assistant", response.reply)
+            self.state_snapshot()
             return response.to_dict()
 
         self.sessions.append_message(state, "user", message)
@@ -87,6 +92,7 @@ class Operator:
                 "windows": self.windows.status(),
             },
         )
+        self.state_snapshot()
         return response.to_dict()
 
     def _task_type_for(self, message: str) -> str:
@@ -269,6 +275,16 @@ class Operator:
                 payload = {"browser": result}
                 reply = self._format_browser_action(result)
             kind = "browser"
+        elif command == "/browser-controlled":
+            if not argument:
+                browser_status = self.browser.inspect()
+                payload = {"browser": browser_status}
+                reply = self._format_browser_status(browser_status)
+            else:
+                result = self.browser.open_url_controlled(argument)
+                payload = {"browser": result}
+                reply = self._format_browser_action(result)
+            kind = "browser"
         elif command == "/browser-fetch":
             result = self.browser.fetch_page(argument or None)
             payload = {"browser": result}
@@ -283,6 +299,16 @@ class Operator:
             windows_status = self.windows.inspect()
             payload = {"windows": windows_status}
             reply = self._format_windows_status(windows_status)
+            kind = "windows"
+        elif command == "/windows-find":
+            result = self.windows.find_windows(argument)
+            payload = {"windows": result}
+            reply = self._format_windows_find(result)
+            kind = "windows"
+        elif command == "/windows-focus":
+            result = self.windows.focus_window(argument)
+            payload = {"windows": result}
+            reply = self._format_windows_focus(result)
             kind = "windows"
         elif command in {"/note", "/idea", "/blocker", "/followup"}:
             if not argument:
@@ -338,9 +364,12 @@ class Operator:
                 "/runtime-start [fast|main] — start a runtime lane",
                 "/runtime-stop [fast|main] — stop a runtime lane",
                 "/browser <url> — open a URL in the external browser",
+                "/browser-controlled <url> — prepare the controlled browser lane",
                 "/browser-fetch [url] — fetch a lightweight text snapshot of the remembered page",
                 "/browser-status — inspect remembered browser state",
                 "/windows-status — inspect Windows adapter status",
+                "/windows-find <text> — search titled windows by text",
+                "/windows-focus <title> — attempt to focus a window title",
                 "/setgoal <text> — set the current goal",
                 "/project <text> — set or inspect current project continuity",
                 "/summarize — write a session summary markdown file",
@@ -505,6 +534,9 @@ class Operator:
     def _format_browser_action(self, result: dict[str, Any]) -> str:
         if result.get("ok"):
             return f"Opened browser URL: {result.get('url')}"
+        next_action = result.get("next_action")
+        if next_action:
+            return f"Browser action failed: {result.get('error') or 'unknown error'}\nNext: {next_action}"
         return f"Browser action failed: {result.get('error') or 'unknown error'}"
 
     def _format_browser_fetch(self, result: dict[str, Any]) -> str:
@@ -527,12 +559,26 @@ class Operator:
             f"is_windows: {status.get('is_windows')}",
             f"pywinauto_installed: {status.get('pywinauto_installed')}",
             f"pyautogui_installed: {status.get('pyautogui_installed')}",
+            f"window_count: {status.get('window_count', 0)}",
         ]
         planned = status.get('planned_capabilities') or []
         if planned:
             lines.append("Planned:")
             lines.extend(f"- {item}" for item in planned[:4])
         return "\n".join(lines)
+
+    def _format_windows_find(self, result: dict[str, Any]) -> str:
+        if not result.get("ok"):
+            return f"Window search failed: {result.get('error') or 'unknown error'}"
+        lines = [f"Window search: {result.get('query')}", f"Matches: {result.get('count', 0)}"]
+        for item in (result.get('items') or [])[:5]:
+            lines.append(f"- {item.get('ProcessName')}: {item.get('MainWindowTitle')}")
+        return "\n".join(lines)
+
+    def _format_windows_focus(self, result: dict[str, Any]) -> str:
+        if result.get("ok"):
+            return f"Attempted to focus window: {result.get('title')}"
+        return f"Window focus failed: {result.get('error') or 'unknown error'}"
 
     def _looks_like_real_dir(self, value: str) -> bool:
         candidate = Path(value).expanduser()

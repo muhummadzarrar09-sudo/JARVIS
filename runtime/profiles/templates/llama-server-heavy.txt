@@ -1,0 +1,6 @@
+# Heavy profile template
+# Target: upgraded laptop / desktop
+# Example knobs:
+# --ctx-size 8192-16384
+# --n-gpu-layers 40+
+# --n-threads 12+

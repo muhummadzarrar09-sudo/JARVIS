@@ -1,0 +1,2 @@
+# BRAVO-1 developer/test dependencies
+pytest>=8,<9

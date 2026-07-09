@@ -1,0 +1,6 @@
+# Medium profile template
+# Target: stronger laptop
+# Example knobs:
+# --ctx-size 8192
+# --n-gpu-layers 20-40
+# --n-threads 8-12

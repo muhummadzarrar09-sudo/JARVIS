@@ -1,0 +1,6 @@
+# Low profile template
+# Target: modest hardware
+# Example knobs:
+# --ctx-size 4096
+# --n-gpu-layers 12-20
+# --n-threads 6-8

@@ -12,6 +12,8 @@ Clean rebuild workspace for BRAVO-1.
 - Bash API: `./scripts/start-api.sh`
 - PowerShell validation: `./scripts/validate-runtime.ps1`
 - Bash validation: `./scripts/validate-runtime.sh`
+- PowerShell installer prereq check: `./scripts/check-installer-prereqs.ps1`
+- Bash installer prereq check: `./scripts/check-installer-prereqs.sh`
 
 ### Direct Python
 - CLI: `PYTHONPATH=app python -m bravo1.cli`
@@ -34,3 +36,5 @@ Clean rebuild workspace for BRAVO-1.
 - `config/` config templates and defaults
 - `tests/` automated tests
 - `docs/` planning, imported research, archived legacy docs
+- `requirements-runtime.txt` runtime dependency pin file (evolves later)
+- `requirements-dev.txt` dev/test dependency pin file

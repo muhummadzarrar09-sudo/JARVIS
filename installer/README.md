@@ -8,5 +8,10 @@ Future Windows packaging layer.
 ## Current state
 Packaging is not implemented yet.
 
-## Planning doc
+## Planning docs
 - `docs/planning/BRAVO1_INSTALLER_PLAN_V1.md`
+- `docs/planning/BRAVO1_INSTALLER_BUILD_MANIFEST_V1.md`
+
+## Support scripts
+- `scripts/build_installer_manifest.py`
+- `scripts/check-installer-prereqs.py`

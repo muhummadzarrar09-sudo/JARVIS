@@ -1,0 +1,8 @@
+# BRAVO-1 runtime dependencies
+# Current rebuild stays mostly stdlib-first.
+# Add production/runtime deps here as soon as a capability lane truly requires them.
+
+# Example future entries:
+# playwright==1.54.*
+# pywinauto==0.6.*
+# pyautogui==0.9.*

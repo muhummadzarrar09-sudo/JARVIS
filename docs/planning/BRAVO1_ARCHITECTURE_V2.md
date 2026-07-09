@@ -61,9 +61,9 @@ Purpose:
 - minimal noise
 - stream status without dashboard clutter
 
-Initial shell modes:
+Current shell modes:
 - terminal-first loop
-- later thin local web shell
+- thin local web shell bootstrap
 - later packaged desktop wrapper
 
 ### 2. Operator core
@@ -86,8 +86,8 @@ Current capabilities:
 - shell execution
 - local model routing/client
 - memory/brain integration
-- browser adapter bootstrap with remembered external-browser state + text snapshot fetch
-- Windows adapter bootstrap with status + Windows window-enumeration path
+- browser adapter bootstrap with remembered external-browser state, controlled-browser foundation, and lightweight text snapshot fetch
+- Windows adapter bootstrap with status, window enumeration, search, and focus-attempt path
 
 Later capabilities:
 - browser DOM operator

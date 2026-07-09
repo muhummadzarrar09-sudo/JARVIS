@@ -29,6 +29,7 @@ By end of Week 1 we should have:
 - [x] local API bootstrap
 - [x] thin local web shell bootstrap
 - [x] state snapshot path for API/web surfaces
+- [x] UI roadmap doc for the shell evolution path
 
 ## Workstream B — Brain continuity
 ### Must finish
@@ -48,6 +49,8 @@ By end of Week 1 we should have:
 - [x] runtime start/stop helper path
 - [x] runtime validation script path
 - [x] model client retry/format discipline
+- [x] runtime profile scaling strategy doc
+- [x] dependency pinning starter files
 
 ## Workstream D — Validation
 ### Must finish
@@ -57,6 +60,8 @@ By end of Week 1 we should have:
 - [x] operator command smoke test
 - [x] browser snapshot smoke test coverage
 - [x] runtime status shape smoke test coverage
+- [x] controlled-browser foundation smoke coverage
+- [x] state snapshot persistence smoke coverage
 
 ---
 

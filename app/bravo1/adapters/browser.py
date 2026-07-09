@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import webbrowser
@@ -32,6 +33,8 @@ class BrowserAdapter:
                 "fetch_count": 0,
                 "mode": "external",
                 "last_title": None,
+                "last_controlled_url": None,
+                "last_controlled_attempt_at": None,
             }
         return json.loads(self.state_path.read_text(encoding="utf-8"))
 
@@ -58,6 +61,9 @@ class BrowserAdapter:
         truncated = len(body) > max_chars
         return title, body[:max_chars], truncated
 
+    def _playwright_available(self) -> bool:
+        return importlib.util.find_spec("playwright") is not None
+
     def open_url(self, url: str) -> dict:
         clean = self._normalize_url(url)
         if not clean:
@@ -81,6 +87,35 @@ class BrowserAdapter:
             }
         except OSError as exc:
             return {"ok": False, "provider": self.provider, "url": clean, "error": str(exc)}
+
+    def open_url_controlled(self, url: str) -> dict:
+        clean = self._normalize_url(url)
+        if not clean:
+            return {"ok": False, "error": "URL is required."}
+        state = self._load_state()
+        state["last_controlled_url"] = clean
+        state["last_controlled_attempt_at"] = datetime.now(UTC).isoformat()
+        state["mode"] = "controlled_pending"
+        self._save_state(state)
+        if not self._playwright_available():
+            return {
+                "ok": False,
+                "provider": "playwright-controlled",
+                "mode": "controlled",
+                "url": clean,
+                "state": state,
+                "error": "Playwright is not installed yet, so controlled browser mode is not available.",
+                "next_action": "Install Playwright when we begin the controlled browser pass.",
+            }
+        return {
+            "ok": False,
+            "provider": "playwright-controlled",
+            "mode": "controlled",
+            "url": clean,
+            "state": state,
+            "error": "Controlled browser mode foundation is in place, but real DOM action execution is not wired yet.",
+            "next_action": "Wire Playwright session + DOM extraction in the next browser build pass.",
+        }
 
     def fetch_page(self, url: str | None = None, max_chars: int = 2500) -> dict:
         target = self._normalize_url(url) or self._load_state().get("last_url")
@@ -120,10 +155,13 @@ class BrowserAdapter:
             "last_title": state.get("last_title"),
             "last_opened_at": state.get("last_opened_at"),
             "last_fetched_at": state.get("last_fetched_at"),
+            "last_controlled_url": state.get("last_controlled_url"),
+            "last_controlled_attempt_at": state.get("last_controlled_attempt_at"),
             "launch_count": state.get("launch_count", 0),
             "fetch_count": state.get("fetch_count", 0),
+            "playwright_available": self._playwright_available(),
             "plain_english": "This is the current BRAVO-1 remembered browser state.",
-            "next_action": "Use /browser <url> to open a page or /browser-fetch to inspect the remembered page.",
+            "next_action": "Use /browser <url> to open a page, /browser-fetch to inspect it, or /browser-controlled to prepare the controlled lane.",
         }
 
     def inspect(self) -> dict:
@@ -131,8 +169,8 @@ class BrowserAdapter:
         status["planned_capabilities"] = [
             "launch real browser session",
             "persist remembered browser state",
+            "controlled browser mode foundation",
             "upgrade later into DOM extraction + action loop",
-            "bridge into controlled browser mode later",
         ]
         status["plain_english"] = "This is the current browser adapter implementation + future browser operator shape."
         return status
